@@ -247,7 +247,7 @@ async def test_stream_timeout_emits_pipeline_error():
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini", total_task_timeout_seconds=1)
     hydra = Hydra(config=config)
 
-    async def _slow_pipeline(task: str, state_ref=None, event_bus=None):
+    async def _slow_pipeline(task: str, state_ref=None, event_bus=None, **kwargs):
         await asyncio.sleep(60)  # Much longer than timeout
         return {"output": "never", "warnings": [], "execution_summary": {}, "files_generated": [], "per_agent_quality": {}, "agents_needing_retry": []}
 
@@ -278,7 +278,7 @@ async def test_stream_timeout_cancels_pipeline_task():
 
     pipeline_cancelled = asyncio.Event()
 
-    async def _slow_pipeline(task: str, state_ref=None, event_bus=None):
+    async def _slow_pipeline(task: str, state_ref=None, event_bus=None, **kwargs):
         try:
             await asyncio.sleep(60)
         except asyncio.CancelledError:

@@ -83,3 +83,12 @@ class ToolResult(BaseModel):
     success: bool
     data: Any = None
     error: str | None = None
+
+
+class FileAttachment(BaseModel):
+    """A file uploaded by the user for agent processing."""
+    filepath: str                       # Absolute path to the uploaded file
+    original_name: str                  # Original filename from user
+    mime_type: str | None = None        # Detected MIME type
+    size_bytes: int = 0                 # File size
+    extracted_text: str | None = None   # Pre-extracted text content (filled by FileProcessor)

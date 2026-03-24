@@ -42,6 +42,9 @@ class EventType(str, Enum):
     SYNTHESIS_TOKEN = "synthesis_token"   # streaming synthesis
     SYNTHESIS_COMPLETE = "synthesis_complete"
 
+    # File processing
+    FILE_PROCESSED = "file_processed"   # after each file is processed
+
     # Pipeline
     PIPELINE_START = "pipeline_start"
     PIPELINE_COMPLETE = "pipeline_complete"

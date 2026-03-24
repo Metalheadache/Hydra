@@ -63,9 +63,14 @@ class Brain:
         self.tool_registry = tool_registry
         self.event_bus = event_bus
 
-    async def plan(self, task: str) -> TaskPlan:
+    async def plan(self, task: str, has_files: bool = False) -> TaskPlan:
         """
         Decompose ``task`` into a TaskPlan.
+
+        Args:
+            task: The task description to decompose.
+            has_files: Whether files are attached to the task. When True, the
+                system prompt is adjusted to guide agents on file handling.
 
         Raises:
             ValueError: If the LLM cannot produce a valid TaskPlan after retries.
@@ -79,7 +84,7 @@ class Brain:
                 data={"task_preview": task[:120]},
             ))
 
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(has_files=has_files)
         user_message = f"Decompose this task into a complete execution plan:\n\n{task}"
 
         last_error: Exception | None = None
@@ -117,9 +122,20 @@ class Brain:
 
     # ── Private ───────────────────────────────────────────────────────────────
 
-    def _build_system_prompt(self) -> str:
+    def _build_system_prompt(self, has_files: bool = False) -> str:
         tool_descriptions = self.tool_registry.get_tool_descriptions()
         schema = json.dumps(TaskPlan.model_json_schema(), indent=2)
+
+        file_context_section = ""
+        if has_files:
+            file_context_section = (
+                "\n## Attached Files\n"
+                "The user has attached files. Their content has been extracted where possible "
+                "and is included in the task description above.\n"
+                "When designing agents, assign appropriate reader tools (read_pdf, etc.) only if "
+                "the extracted text is insufficient or truncated. "
+                "File paths are available for direct tool access.\n"
+            )
 
         return (
             "You are a task planning AI. Given a complex task, your job is to:\n"
@@ -135,6 +151,7 @@ class Brain:
             "- execution_groups is a list of lists of sub-task IDs (topologically sorted).\n"
             "- Every sub-task ID referenced in execution_groups must appear in the sub_tasks list.\n"
             "- Every agent_spec's sub_task_id must reference a sub-task ID in sub_tasks.\n\n"
+            f"{file_context_section}"
             f"## Available Tools\n{tool_descriptions}\n\n"
             f"## Output Schema\nRespond with ONLY a JSON object matching this schema:\n{schema}\n\n"
             "Do NOT include any text outside the JSON object."

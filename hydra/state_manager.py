@@ -10,7 +10,7 @@ from typing import Any
 
 import structlog
 
-from hydra.models import AgentOutput, AgentStatus
+from hydra.models import AgentOutput, AgentStatus, FileAttachment
 
 logger = structlog.get_logger(__name__)
 
@@ -39,6 +39,7 @@ class StateManager:
         self._agent_outputs: dict[str, AgentOutput] = {}
         self._shared_context: dict[str, Any] = {}
         self._files: dict[str, str] = {}          # filename → filepath
+        self._uploaded_files: list[FileAttachment] = []   # uploaded file attachments
         self._start_time = time.monotonic()
         self._sub_task_to_role: dict[str, str] = {}  # sub_task_id → agent role
 
@@ -163,6 +164,19 @@ class StateManager:
         """Return all registered files."""
         async with self._lock:
             return dict(self._files)
+
+    # ── Uploaded file attachments ─────────────────────────────────────────────
+
+    async def store_files(self, files: list[FileAttachment]) -> None:
+        """Store uploaded file metadata for agent access."""
+        async with self._lock:
+            self._uploaded_files.extend(files)
+            logger.debug("uploaded_files_stored", count=len(files))
+
+    async def get_files(self) -> list[FileAttachment]:
+        """Get all uploaded files."""
+        async with self._lock:
+            return list(self._uploaded_files)
 
     # ── Summary ───────────────────────────────────────────────────────────────
 

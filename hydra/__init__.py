@@ -17,6 +17,8 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import logging
+from pathlib import Path
 from typing import AsyncGenerator, Callable
 
 import structlog
@@ -26,7 +28,9 @@ from hydra.brain import Brain
 from hydra.config import HydraConfig
 from hydra.events import EventBus, EventType, HydraEvent
 from hydra.execution_engine import ExecutionEngine
+from hydra.file_processor import FileProcessor
 from hydra.logger import configure_logging
+from hydra.models import FileAttachment
 from hydra.post_brain import PostBrain
 from hydra.state_manager import StateManager
 from hydra.tool_registry import ToolRegistry
@@ -70,7 +74,7 @@ class Hydra:
             tools=len(self.tool_registry),
         )
 
-    async def run(self, task: str) -> dict:
+    async def run(self, task: str, files: list[str] | None = None) -> dict:
         """
         Execute a complex task end-to-end using the full pipeline.
 
@@ -80,6 +84,7 @@ class Hydra:
 
         Args:
             task: Natural language description of the task to accomplish.
+            files: Optional list of file paths to attach for agent processing.
 
         Returns:
             A dict with:
@@ -100,7 +105,7 @@ class Hydra:
 
         try:
             result = await asyncio.wait_for(
-                self._run_pipeline(task, state_ref=state_ref),
+                self._run_pipeline(task, state_ref=state_ref, files=files),
                 timeout=self.config.total_task_timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -169,9 +174,13 @@ class Hydra:
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 
-    async def stream(self, task: str) -> AsyncGenerator[HydraEvent, None]:
+    async def stream(self, task: str, files: list[str] | None = None) -> AsyncGenerator[HydraEvent, None]:
         """
         Execute task and stream events as they happen.
+
+        Args:
+            task: Natural language description of the task to accomplish.
+            files: Optional list of file paths to attach for agent processing.
 
         Usage::
 
@@ -188,7 +197,7 @@ class Hydra:
 
         # Start pipeline in background task
         pipeline_task = asyncio.create_task(
-            self._run_pipeline_with_events(task, event_bus)
+            self._run_pipeline_with_events(task, event_bus, files=files)
         )
 
         # Yield events as they arrive, with total timeout
@@ -231,7 +240,9 @@ class Hydra:
 
                 event_bus.on(_make_filtered(_type, callback))
 
-    async def _run_pipeline_with_events(self, task: str, event_bus: EventBus) -> dict:
+    async def _run_pipeline_with_events(
+        self, task: str, event_bus: EventBus, files: list[str] | None = None
+    ) -> dict:
         """Run the pipeline with events, emitting PIPELINE_START/COMPLETE/ERROR."""
         await event_bus.emit(HydraEvent(
             type=EventType.PIPELINE_START,
@@ -239,7 +250,7 @@ class Hydra:
         ))
 
         try:
-            result = await self._run_pipeline(task, event_bus=event_bus)
+            result = await self._run_pipeline(task, event_bus=event_bus, files=files)
             await event_bus.emit(HydraEvent(
                 type=EventType.PIPELINE_COMPLETE,
                 data={
@@ -257,7 +268,13 @@ class Hydra:
             await event_bus.close()
             raise
 
-    async def _run_pipeline(self, task: str, state_ref: list | None = None, event_bus: EventBus | None = None) -> dict:
+    async def _run_pipeline(
+        self,
+        task: str,
+        state_ref: list | None = None,
+        event_bus: EventBus | None = None,
+        files: list[str] | None = None,
+    ) -> dict:
         """Internal pipeline: Brain → Factory → Engine → PostBrain."""
         # Fresh state for each run
         state = StateManager()
@@ -266,13 +283,21 @@ class Hydra:
             state_ref.append(state)
 
         # Wire registered callbacks if no event_bus provided (run() path)
+        # MUST happen BEFORE file processing so FILE_PROCESSED events reach callbacks
         if event_bus is None and self._event_callbacks:
             event_bus = EventBus()
             self._wire_callbacks(event_bus)
 
+        # 0. File processing — runs before Brain so files are in the prompt
+        enhanced_task = task
+        if files:
+            enhanced_task = await self._process_files(
+                task, files, state, event_bus
+            )
+
         # 1. Brain: decompose task → TaskPlan
         brain = Brain(self.config, self.tool_registry, event_bus=event_bus)
-        plan = await brain.plan(task)
+        plan = await brain.plan(enhanced_task, has_files=bool(files))
 
         # 2. Factory: instantiate agents from plan
         factory = AgentFactory(self.config, self.tool_registry, state, event_bus=event_bus)
@@ -285,6 +310,11 @@ class Hydra:
         # 4. Post-Brain: quality check + synthesize
         post_brain = PostBrain(self.config, state, plan, event_bus=event_bus)
         result = await post_brain.synthesize()
+
+        # Replace plan's original_task with enhanced_task (if files were attached)
+        # This ensures the plan context is consistent with what Brain received.
+        if files:
+            plan.original_task = enhanced_task
 
         # 5. Quality retry loop (single cycle, to prevent infinite loops)
         agents_needing_retry = result.get("agents_needing_retry", [])
@@ -304,3 +334,90 @@ class Hydra:
             result["retry_metadata"] = {"retried_agents": [], "retry_performed": False}
 
         return result
+
+    async def _process_files(
+        self,
+        task: str,
+        files: list[str],
+        state: StateManager,
+        event_bus: EventBus | None,
+    ) -> str:
+        """
+        Process attached files and return an enhanced task prompt.
+
+        Steps:
+        1. Process each file through FileProcessor → FileAttachment
+        2. Store FileAttachments in StateManager
+        3. Emit FILE_PROCESSED events (if event_bus present)
+        4. Build enhanced task prompt with file context
+        """
+        # Enforce file count limit
+        max_files = self.config.max_upload_files
+        if len(files) > max_files:
+            raise ValueError(
+                f"Too many files: {len(files)} provided, maximum is {max_files}."
+            )
+
+        file_processor = FileProcessor(self.config.output_directory)
+        attachments: list[FileAttachment] = []
+        max_size_bytes = self.config.max_upload_file_size_mb * 1024 * 1024
+
+        for filepath in files:
+            # Skip files that are too large
+            p = Path(filepath)
+            if p.exists() and p.stat().st_size > max_size_bytes:
+                logger.warning(
+                    "file_too_large_skipped",
+                    filepath=str(filepath),
+                    size_bytes=p.stat().st_size,
+                    limit_bytes=max_size_bytes,
+                )
+                continue
+
+            # Use the public process() method instead of private _process_single_path
+            results = await file_processor.process([filepath])
+            attachment = results[0]
+            attachments.append(attachment)
+
+            if event_bus:
+                await event_bus.emit(HydraEvent(
+                    type=EventType.FILE_PROCESSED,
+                    data={
+                        "filename": attachment.original_name,
+                        "size_bytes": attachment.size_bytes,
+                        "mime_type": attachment.mime_type,
+                        "has_text": attachment.extracted_text is not None,
+                    },
+                ))
+
+        # Store in state so agents can reference later
+        await state.store_files(attachments)
+
+        # Build enhanced prompt
+        lines: list[str] = [f"USER TASK: {task}", "", "ATTACHED FILES:"]
+        for i, att in enumerate(attachments, 1):
+            size_kb = att.size_bytes / 1024
+            size_str = f"{size_kb:.1f}KB" if size_kb < 1024 else f"{size_kb / 1024:.1f}MB"
+
+            if att.extracted_text is not None:
+                preview = att.extracted_text[:500]
+                if len(att.extracted_text) > 500:
+                    preview += "..."
+                lines.append(f"{i}. {att.original_name} ({size_str}) — {preview}")
+            else:
+                lines.append(
+                    f"{i}. {att.original_name} ({size_str}) — "
+                    f"[binary file, available at {att.filepath}]"
+                )
+
+        # Update Brain prompt context for files
+        if attachments:
+            lines.extend([
+                "",
+                f"NOTE: {len(attachments)} file(s) have been attached. "
+                "Text content has been extracted where possible. "
+                "Full file paths are available for direct tool access.",
+            ])
+
+        logger.info("files_processed", count=len(attachments), task_preview=task[:80])
+        return "\n".join(lines)

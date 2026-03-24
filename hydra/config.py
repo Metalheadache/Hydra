@@ -50,6 +50,10 @@ class HydraConfig(BaseSettings):
     # ── Paths ─────────────────────────────────────────────────────────────────
     output_directory: str = Field(default="./hydra_output", description="Directory where generated files are written.")
 
+    # ── File Upload ───────────────────────────────────────────────────────────
+    max_upload_files: int = Field(default=20, description="Maximum number of files that can be attached per run.")
+    max_upload_file_size_mb: int = Field(default=50, description="Maximum file size in MB; larger files are skipped.")
+
     # ── Search ────────────────────────────────────────────────────────────────
     search_api_key: str = Field(default="", description="API key for web search (Brave/Tavily/SerpAPI).")
     search_backend: str = Field(default="brave", description="Search backend: brave | tavily | serpapi")
