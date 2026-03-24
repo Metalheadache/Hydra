@@ -291,7 +291,7 @@ Hydra runs LLM-generated code and tool calls. Here's what's protected and what's
 - **HTTP tools**: Private IPs blocked (RFC 1918, link-local, loopback). Redirects disabled. Standard SSRF prevention — not bulletproof against DNS rebinding.
 - **Tool isolation**: Stateful tools get per-agent instances. No shared mutable state between concurrent runs.
 
-**What's NOT sandboxed (be honest with yourself):**
+**What's NOT sandboxed:**
 - **Python execution**: Runs in a temp directory but has **full network access and filesystem read**. LLM-generated code can `import socket`, read `/etc/passwd`, or call home. For real isolation, wrap Hydra in Docker with `--network none` and volume restrictions. We don't pretend otherwise.
 - **LLM prompt injection**: Upstream agent outputs are injected into downstream prompts. A compromised agent could craft output that manipulates downstream agents. XML delimiters help but aren't a guarantee.
 
