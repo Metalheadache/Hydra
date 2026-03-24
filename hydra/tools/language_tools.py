@@ -112,7 +112,7 @@ class TranslationTool(BaseTool):
                     f"<text_to_translate>\n{text}\n</text_to_translate>"
                 )
 
-            translation = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=2048)
+            translation = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=16384)
             logger.info(
                 "translation_done",
                 source=source_language,
@@ -201,7 +201,7 @@ class SummarizerTool(BaseTool):
                 f"<text_to_summarize>\n{text}\n</text_to_summarize>"
             )
 
-            summary = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=4096)
+            summary = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=8192)
             logger.info(
                 "summarization_done",
                 style=style,
