@@ -55,28 +55,52 @@ class ToolRegistry:
             WriteCsvTool,
             WriteCodeTool,
         )
-        from hydra.tools.research_tools import WebSearchTool, WebFetchTool
-        from hydra.tools.data_tools import JsonValidatorTool
+        from hydra.tools.research_tools import WebSearchTool, WebFetchTool, HttpRequestTool
+        from hydra.tools.data_tools import JsonValidatorTool, ChartGeneratorTool, DataTransformTool
         from hydra.tools.code_tools import RunPythonTool, RunShellTool
         from hydra.tools.memory_tools import MemoryStoreTool, MemoryRetrieveTool
         from hydra.tools.validation_tools import OutputValidatorTool, QualityScorerTool
+        from hydra.tools.document_tools import (
+            WriteDocxTool,
+            WriteXlsxTool,
+            WritePptxTool,
+            PdfReaderTool,
+        )
+        from hydra.tools.language_tools import TranslationTool, SummarizerTool
 
         output_dir = config.output_directory if config is not None else "./hydra_output"
 
         self.register_many([
+            # File tools
             WriteMarkdownTool(output_dir=output_dir),
             WriteJsonTool(output_dir=output_dir),
             WriteCsvTool(output_dir=output_dir),
             WriteCodeTool(output_dir=output_dir),
+            # Document tools
+            WriteDocxTool(output_dir=output_dir),
+            WriteXlsxTool(output_dir=output_dir),
+            WritePptxTool(output_dir=output_dir),
+            PdfReaderTool(),
+            # Research tools
             WebSearchTool(config=config),
             WebFetchTool(),
+            HttpRequestTool(),
+            # Data tools
             JsonValidatorTool(),
+            ChartGeneratorTool(output_dir=output_dir),
+            DataTransformTool(),
+            # Code tools
             RunPythonTool(),
             RunShellTool(),
+            # Memory tools
             MemoryStoreTool(),
             MemoryRetrieveTool(),
+            # Validation tools
             OutputValidatorTool(),
             QualityScorerTool(),
+            # Language tools
+            TranslationTool(config=config),
+            SummarizerTool(config=config),
         ])
         logger.info("default_tools_registered", count=len(self._tools))
 

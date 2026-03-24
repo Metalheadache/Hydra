@@ -13,6 +13,8 @@ from hydra.state_manager import StateManager
 from hydra.tool_registry import ToolRegistry
 from hydra.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
 from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
+from hydra.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool
+from hydra.tools.data_tools import ChartGeneratorTool
 
 logger = structlog.get_logger(__name__)
 
@@ -121,6 +123,12 @@ class AgentFactory:
             "write_json": WriteJsonTool,
             "write_csv": WriteCsvTool,
             "write_code": WriteCodeTool,
+            # Document tools — same pattern: inject state_manager + preserve output_dir
+            "write_docx": WriteDocxTool,
+            "write_xlsx": WriteXlsxTool,
+            "write_pptx": WritePptxTool,
+            # Chart generator also registers output files
+            "generate_chart": ChartGeneratorTool,
         }
 
         for tool_name in spec.tools_needed:

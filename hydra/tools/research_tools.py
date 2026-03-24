@@ -16,10 +16,26 @@ from hydra.tools.base import BaseTool
 if TYPE_CHECKING:
     from hydra.config import HydraConfig
 
+import ipaddress
+import re as _re
+
 logger = structlog.get_logger(__name__)
 
 _MAX_FETCH_CHARS = 5000
 _DEFAULT_SEARCH_RESULTS = 5
+
+# SSRF-prevention: private/loopback CIDR blocks
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("0.0.0.0/8"),        # "this" network
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS metadata
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
+]
+_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
 
 
 class WebSearchTool(BaseTool):
@@ -142,6 +158,13 @@ class WebFetchTool(BaseTool):
     timeout_seconds = 20
 
     async def execute(self, url: str, max_chars: int = _MAX_FETCH_CHARS) -> ToolResult:
+        # SSRF prevention
+        if _is_ssrf_target(url):
+            return ToolResult(
+                success=False,
+                error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",
+            )
+
         try:
             headers = {
                 "User-Agent": (
@@ -189,3 +212,155 @@ class WebFetchTool(BaseTool):
             # Fallback: very basic tag stripping
             import re
             return re.sub(r"<[^>]+>", " ", html)
+
+
+# ── HttpRequestTool ───────────────────────────────────────────────────────────
+
+def _is_ssrf_target(url: str) -> bool:
+    """Return True if the URL resolves to a private/loopback address (SSRF prevention)."""
+    import socket
+    try:
+        parsed = httpx.URL(url)
+        host = parsed.host
+    except Exception:
+        return False
+
+    if host.lower() in _BLOCKED_HOSTNAMES:
+        return True
+
+    # Strip IPv6 brackets
+    bare_host = host.strip("[]")
+
+    try:
+        addr = ipaddress.ip_address(bare_host)
+        return any(addr in net for net in _BLOCKED_NETWORKS)
+    except ValueError:
+        pass  # not a literal IP, try DNS resolution
+
+    try:
+        resolved_ips = socket.getaddrinfo(bare_host, None)
+        for family, _, _, _, sockaddr in resolved_ips:
+            ip_str = sockaddr[0]
+            try:
+                addr = ipaddress.ip_address(ip_str)
+                if any(addr in net for net in _BLOCKED_NETWORKS):
+                    return True
+            except ValueError:
+                pass
+    except Exception:
+        pass  # DNS failure — let the request proceed and fail naturally
+
+    return False
+
+
+class HttpRequestTool(BaseTool):
+    """Make HTTP requests (GET, POST, PUT, DELETE) with SSRF prevention."""
+
+    name = "http_request"
+    description = (
+        "Make an HTTP request (GET/POST/PUT/DELETE) to an external URL. "
+        "Requests to localhost, 127.x, 10.x, 172.16.x–172.31.x, and 192.168.x are blocked "
+        "for SSRF prevention. "
+        "Returns status_code, selected headers, and truncated body text."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "method": {
+                "type": "string",
+                "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                "description": "HTTP method.",
+            },
+            "url": {
+                "type": "string",
+                "description": "Full URL to request (must start with http:// or https://).",
+            },
+            "headers": {
+                "type": "object",
+                "description": "Optional request headers as a dict.",
+            },
+            "body": {
+                "description": "Optional request body. Dicts are sent as JSON; strings as raw text.",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Request timeout in seconds (default 30).",
+                "default": 30,
+            },
+        },
+        "required": ["method", "url"],
+    }
+    timeout_seconds = 30
+
+    async def execute(
+        self,
+        method: str,
+        url: str,
+        headers: dict | None = None,
+        body=None,
+        timeout: int = 30,
+    ) -> ToolResult:
+        # Validate URL scheme
+        if not url.startswith(("http://", "https://")):
+            return ToolResult(success=False, error="URL must start with http:// or https://")
+
+        # SSRF prevention
+        if _is_ssrf_target(url):
+            return ToolResult(
+                success=False,
+                error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",
+            )
+
+        method = method.upper()
+        if method not in {"GET", "POST", "PUT", "DELETE", "PATCH"}:
+            return ToolResult(success=False, error=f"Unsupported HTTP method: {method!r}")
+
+        # Enforce timeout upper bound to prevent resource exhaustion
+        timeout = min(int(timeout), 60)
+
+        try:
+            request_kwargs: dict = {
+                "method": method,
+                "url": url,
+                "timeout": timeout,
+                "follow_redirects": False,
+            }
+            if headers:
+                request_kwargs["headers"] = headers
+            if body is not None:
+                if isinstance(body, dict):
+                    request_kwargs["json"] = body
+                else:
+                    request_kwargs["content"] = str(body)
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.request(**request_kwargs)
+
+            # Select safe response headers to expose
+            safe_header_keys = {"content-type", "content-length", "x-request-id", "date", "server"}
+            exposed_headers = {k: v for k, v in resp.headers.items() if k.lower() in safe_header_keys}
+
+            body_text = resp.text
+            truncated = len(body_text) > _MAX_FETCH_CHARS
+            if truncated:
+                body_text = body_text[:_MAX_FETCH_CHARS] + f"\n... [truncated at {_MAX_FETCH_CHARS} chars]"
+
+            logger.info("http_request_done", method=method, url=url, status=resp.status_code)
+            return ToolResult(
+                success=True,
+                data={
+                    "status_code": resp.status_code,
+                    "headers": exposed_headers,
+                    "body": body_text,
+                    "truncated": truncated,
+                    "url": str(resp.url),
+                },
+            )
+
+        except httpx.TimeoutException:
+            return ToolResult(success=False, error=f"Request to {url!r} timed out after {timeout}s")
+        except httpx.HTTPStatusError as exc:
+            return ToolResult(success=False, error=f"HTTP {exc.response.status_code}: {exc}")
+        except Exception as exc:
+            logger.error("http_request_failed", method=method, url=url, error=str(exc))
+            return ToolResult(success=False, error=f"HTTP request failed: {exc}")
