@@ -5,13 +5,40 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10' fill='%230025C9' opacity='0.8'/><text x='12' y='16' text-anchor='middle' font-size='12' fill='white' font-family='system-ui'>H</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hydra — Multi-Agent Orchestration</title>
+    <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/ByteBounce.ttf" as="font" type="font/ttf" crossorigin>
     <style>
+      @font-face {
+        font-family: 'ByteBounce';
+        src: url('/fonts/ByteBounce.ttf') format('truetype');
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Inter';
+        src: url('/fonts/InterVariable.woff2') format('woff2-variations');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: block;
+      }
       html, body { height: 100%; overflow: hidden; }
-      body { background: #05070a; }
+      body { background: #05070a; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; opacity: 0; }
+      body.fonts-ready { opacity: 1; transition: opacity 0.15s ease; }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      Promise.all([
+        document.fonts.load('1em Inter'),
+        document.fonts.load('1em ByteBounce'),
+      ]).then(() => {
+        document.body.classList.add('fonts-ready');
+      }).catch(() => {
+        document.body.classList.add('fonts-ready');
+      });
+      // Fallback: show anyway after 500ms
+      setTimeout(() => document.body.classList.add('fonts-ready'), 500);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

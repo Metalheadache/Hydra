@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'; // Fix 2: import useMemo
 
 // ─── Mock streaming ──────────────────────────────────────────────────────────
 const MOCK_RESPONSES = [
@@ -52,9 +52,9 @@ const tokens = (isDark) => ({
     : 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%)',
   glassBorder: isDark ? 'rgba(192,192,192,0.2)' : 'rgba(255,255,255,0.6)',
   glassBorderFocus: 'rgba(160,230,255,0.6)',
-  glassHighlight: 'inset 0 1px 1px rgba(255,255,255,0.1)',
+  glassHighlight: 'inset 0 1px 1px rgba(255,255,255,0.1)', // Fix 10: used in InputBar container
   glassShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)',
-  neonGlow: '0 0 20px rgba(0,37,201,0.35), inset 0 0 5px rgba(255,255,255,0.05)',
+  neonGlow: '0 0 20px rgba(0,37,201,0.35), inset 0 0 5px rgba(255,255,255,0.05)', // Fix 10: used in Send button
   textPrimary: isDark ? '#f0f2f5' : '#0f172a',
   textSecondary: isDark ? '#94a3b8' : '#64748b',
   accentPrimary: '#0025C9',
@@ -133,6 +133,13 @@ const SunIcon = ({ size = 16, color = 'currentColor' }) => (
   </svg>
 );
 
+// Fix 11: MoonIcon for dark mode toggle
+const MoonIcon = ({ size = 20, color = 'currentColor' }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="1.5" fill="none">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
+
 // ─── Slider component ──────────────────────────────────────────────────────────
 const GlassSlider = ({ value, onChange, min, max, step, label, displayValue, t }) => {
   const pct = ((value - min) / (max - min)) * 100;
@@ -179,6 +186,8 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelInputFocused, setModelInputFocused] = useState(false);
   const [brainModelInputFocused, setBrainModelInputFocused] = useState(false);
+  // Fix 8: React state for dark toggle hover
+  const [hoveredDarkToggle, setHoveredDarkToggle] = useState(false);
 
   const inputStyle = (focused) => ({
     width: '100%', background: 'transparent', border: 'none', outline: 'none',
@@ -342,26 +351,32 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         </div>
       </div>
 
-      {/* Dark Mode Toggle */}
-      <div onClick={onToggleDark} style={{
-        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-        borderRadius: 14, cursor: 'pointer',
-        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)',
-        border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-        transition: 'all 0.3s ease',
-      }}
-        onMouseEnter={e => {
-          e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
-          e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)';
-          e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+      {/* Fix 8: Dark Mode Toggle — button with role="switch", React hover state, no inline DOM mutation */}
+      {/* Fix 11: Toggle MoonIcon / SunIcon based on isDark */}
+      <button
+        role="switch"
+        aria-checked={isDark}
+        onClick={onToggleDark}
+        onMouseEnter={() => setHoveredDarkToggle(true)}
+        onMouseLeave={() => setHoveredDarkToggle(false)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+          borderRadius: 14, cursor: 'pointer', width: '100%',
+          background: hoveredDarkToggle
+            ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)')
+            : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)'),
+          border: `1px solid ${hoveredDarkToggle
+            ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')
+            : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
+          transition: 'all 0.3s ease',
         }}
       >
-        <SunIcon size={16} color={t.textSecondary} />
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: t.textPrimary }}>Dark Mode</span>
-        {/* Toggle */}
+        {isDark
+          ? <MoonIcon size={16} color={t.textSecondary} />
+          : <SunIcon size={16} color={t.textSecondary} />
+        }
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: t.textPrimary, textAlign: 'left' }}>Dark Mode</span>
+        {/* Toggle pill */}
         <div style={{
           width: 44, height: 24, borderRadius: 12, position: 'relative',
           background: isDark ? 'rgba(0,37,201,0.25)' : 'rgba(0,0,0,0.12)',
@@ -378,34 +393,78 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
           }} />
         </div>
-      </div>
+      </button>
     </div>
   );
 };
 
 // ─── File chip ─────────────────────────────────────────────────────────────────
-const FileChip = ({ file, onRemove, t }) => (
-  <div style={{
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    padding: '3px 10px 3px 8px', borderRadius: 999,
-    background: t.glassBgBase,
-    backdropFilter: 'blur(10px)',
-    border: `1px solid ${t.glassBorder}`,
-    fontSize: 12, color: t.textSecondary,
-    maxWidth: 180,
-    flexShrink: 0,
-  }}>
-    <PaperclipIcon size={11} color={t.textSecondary} />
-    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{file.name}</span>
-    <button onClick={onRemove} style={{
-      background: 'none', border: 'none', cursor: 'pointer',
-      color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0,
-      flexShrink: 0,
+const FileChip = ({ file, onRemove, t }) => {
+  const isError = !!file.error;
+  const isDone = !isError && file.progress >= 100;
+
+  if (isError) {
+    return (
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '4px 10px 4px 8px', borderRadius: 8,
+        background: 'rgba(239,68,68,0.08)',
+        border: '1px solid rgba(239,68,68,0.3)',
+        fontSize: 12, color: '#ef4444',
+        maxWidth: 280, flexShrink: 0,
+      }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.error}</span>
+        <button onClick={onRemove} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#ef4444', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
+        }}>
+          <XIcon size={11} color="#ef4444" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      display: 'inline-flex', flexDirection: 'column', gap: 3,
+      padding: '4px 10px 4px 8px', borderRadius: 10,
+      background: t.glassBgBase,
+      backdropFilter: 'blur(10px)',
+      border: `1px solid ${isDone ? 'rgba(74,222,128,0.3)' : t.glassBorder}`,
+      fontSize: 12, color: t.textSecondary,
+      maxWidth: 180, flexShrink: 0,
+      transition: 'border-color 0.3s ease',
     }}>
-      <XIcon size={11} color={t.textSecondary} />
-    </button>
-  </div>
-);
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <PaperclipIcon size={11} color={isDone ? '#4ade80' : t.textSecondary} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{file.name}</span>
+        <button onClick={onRemove} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0, marginLeft: 'auto',
+        }}>
+          <XIcon size={11} color={t.textSecondary} />
+        </button>
+      </div>
+      {/* Progress bar */}
+      <div style={{
+        height: 2, borderRadius: 1,
+        background: 'rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+        opacity: isDone ? 0 : 1,
+        transition: 'opacity 0.5s ease 0.3s',
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${file.progress ?? 0}%`,
+          background: 'linear-gradient(90deg, #4a6de5, #0025C9)',
+          borderRadius: 1,
+          transition: 'width 0.1s ease',
+          boxShadow: '0 0 6px rgba(0,37,201,0.5)',
+        }} />
+      </div>
+    </div>
+  );
+};
 
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 const MessageBubble = ({ msg, isStreaming, t, idx }) => {
@@ -433,9 +492,10 @@ const MessageBubble = ({ msg, isStreaming, t, idx }) => {
         border: `1px solid ${isUser ? t.userBubbleBorder : t.glassBorder}`,
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
+        // Fix 10: use t.glassHighlight for assistant bubble highlight
         boxShadow: isUser
           ? '0 0 20px rgba(0,37,201,0.15), inset 0 1px 1px rgba(255,255,255,0.08)'
-          : 'inset 0 1px 1px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.15)',
+          : `${t.glassHighlight}, 0 4px 20px rgba(0,0,0,0.15)`,
         fontSize: 15, color: t.textPrimary, lineHeight: 1.6,
         wordBreak: 'break-word', whiteSpace: 'pre-wrap',
       }}>
@@ -464,6 +524,47 @@ const MessageBubble = ({ msg, isStreaming, t, idx }) => {
   );
 };
 
+// ─── Morph Overlay — Fix 1: moved OUTSIDE App, receives props ─────────────────
+const MorphOverlay = ({ morphRect, morphPhase, morphText, t }) => {
+  if (!morphRect || morphPhase === 0) return null;
+
+  const targetTop = 24;
+  const targetRight = 24;
+  const targetWidth = Math.min(360, window.innerWidth * 0.6);
+  const targetLeft = window.innerWidth - targetRight - targetWidth;
+
+  const style = {
+    position: 'fixed',
+    top: morphPhase === 1 ? morphRect.top : targetTop,
+    left: morphPhase === 1 ? morphRect.left : targetLeft,
+    width: morphPhase === 1 ? morphRect.width : targetWidth,
+    height: morphPhase === 1 ? morphRect.height : 'auto',
+    borderRadius: morphPhase === 1 ? 999 : '20px 20px 4px 20px',
+    background: morphPhase === 1 ? t.glassBgBase : t.userBubbleBg,
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    border: `1px solid ${morphPhase === 1 ? t.glassBorder : t.userBubbleBorder}`,
+    boxShadow: morphPhase === 1
+      ? 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)'
+      : '0 0 20px rgba(0,37,201,0.2)',
+    zIndex: 2000,
+    padding: '14px 18px',
+    display: 'flex', alignItems: 'center',
+    fontSize: 15, color: t.textPrimary, lineHeight: 1.5,
+    overflow: 'hidden',
+    transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)',
+    opacity: morphPhase === 2 ? 0 : 1,
+  };
+
+  return (
+    <div style={style}>
+      <span style={{ opacity: morphPhase === 1 ? 0.7 : 1, transition: 'opacity 0.3s ease' }}>
+        {morphText}
+      </span>
+    </div>
+  );
+};
+
 // ─── Input Bar (shared between IDLE and CHAT_ACTIVE) ──────────────────────────
 const InputBar = ({
   value, onChange, onSend, onStop,
@@ -471,11 +572,37 @@ const InputBar = ({
   focused, onFocus, onBlur,
   t, isDark, placeholder,
   extraStyle,
+  autoFocusChat, // Fix 6: simpler auto-focus approach
 }) => {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [hoveredSend, setHoveredSend] = useState(false);
   const [hoveredClip, setHoveredClip] = useState(false);
+
+  // Fix 3: track upload interval IDs for cleanup
+  const uploadIntervalsRef = useRef([]);
+
+  // Fix 3: cleanup all intervals on unmount
+  useEffect(() => {
+    return () => {
+      uploadIntervalsRef.current.forEach(clearInterval);
+    };
+  }, []);
+
+  // Fix 3: clear intervals when files array is reset (IDLE → CHAT transition)
+  useEffect(() => {
+    if (files.length === 0 && uploadIntervalsRef.current.length > 0) {
+      uploadIntervalsRef.current.forEach(clearInterval);
+      uploadIntervalsRef.current = [];
+    }
+  }, [files.length]);
+
+  // Fix 6: focus textarea when autoFocusChat is true (on mount in CHAT_ACTIVE)
+  useEffect(() => {
+    if (autoFocusChat) {
+      textareaRef.current?.focus();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // auto-resize textarea
   useEffect(() => {
@@ -501,9 +628,10 @@ const InputBar = ({
     backdropFilter: 'blur(24px)',
     WebkitBackdropFilter: 'blur(24px)',
     border: `1px solid ${focused ? t.glassBorderFocus : t.glassBorder}`,
+    // Fix 10: use t.glassHighlight in unfocused state
     boxShadow: focused
       ? `0 0 24px rgba(0,37,201,0.3), inset 0 0 5px rgba(255,255,255,0.05), 0 10px 40px rgba(0,0,0,0.3)`
-      : `inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.3)`,
+      : `${t.glassHighlight}, 0 0 20px rgba(0,0,0,0.3)`,
     transition: 'all 0.4s cubic-bezier(0.16,1,0.3,1)',
     overflow: 'hidden',
     ...extraStyle,
@@ -527,8 +655,55 @@ const InputBar = ({
           <PaperclipIcon size={18} color="currentColor" />
         </button>
         <input ref={fileInputRef} type="file" multiple hidden onChange={e => {
-          const newFiles = Array.from(e.target.files).map(f => ({ name: f.name, size: f.size, file: f }));
-          onFilesChange(prev => [...prev, ...newFiles]);
+          const MAX_FILES = 20;
+          const MAX_SIZE_MB = 50;
+          const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+          const incoming = Array.from(e.target.files);
+          const errors = [];
+          const valid = [];
+
+          // Fix 9: partial acceptance — only reject files that don't fit
+          const currentCount = files ? files.length : 0;
+          const remaining = MAX_FILES - currentCount;
+          let acceptedIncoming = incoming;
+
+          if (incoming.length > remaining) {
+            const skipped = incoming.length - remaining;
+            errors.push(`Only ${remaining} more file${remaining !== 1 ? 's' : ''} allowed (max ${MAX_FILES}) — ${skipped} file${skipped !== 1 ? 's' : ''} skipped`);
+            acceptedIncoming = incoming.slice(0, remaining);
+          }
+
+          for (const f of acceptedIncoming) {
+            if (f.size > MAX_SIZE_BYTES) {
+              errors.push(`"${f.name}" exceeds ${MAX_SIZE_MB}MB limit (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
+            } else {
+              valid.push({ name: f.name, size: f.size, file: f, progress: 0 });
+            }
+          }
+
+          const withErrors = errors.map(err => ({ name: '', size: 0, error: err }));
+          onFilesChange(prev => [...prev, ...withErrors, ...valid.map(f => ({ ...f, progress: 0 }))]);
+
+          // Animate progress for each valid file
+          // Fix 3: push interval IDs to ref for cleanup
+          valid.forEach((f) => {
+            let prog = 0;
+            const interval = setInterval(() => {
+              prog += 10 + Math.random() * 20;
+              if (prog >= 100) {
+                prog = 100;
+                clearInterval(interval);
+                uploadIntervalsRef.current = uploadIntervalsRef.current.filter(id => id !== interval);
+              }
+              onFilesChange(prev => prev.map(existing =>
+                existing.name === f.name && existing.file === f.file
+                  ? { ...existing, progress: Math.round(prog) }
+                  : existing
+              ));
+            }, 80);
+            uploadIntervalsRef.current.push(interval);
+          });
+
           e.target.value = '';
         }} />
 
@@ -573,7 +748,8 @@ const InputBar = ({
                 ? (hoveredSend ? 'rgba(0,37,201,0.85)' : 'rgba(0,37,201,0.7)')
                 : 'transparent',
               color: canSend ? 'white' : t.textSecondary,
-              boxShadow: canSend && hoveredSend ? '0 0 20px rgba(0,37,201,0.5)' : 'none',
+              // Fix 10: use t.neonGlow for Send button hover glow
+              boxShadow: canSend && hoveredSend ? t.neonGlow : 'none',
               opacity: isStreaming ? 0 : 1,
               transform: isStreaming ? 'scale(0.7)' : 'scale(1)',
               transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
@@ -646,16 +822,17 @@ export default function App() {
   const messagesEndRef = useRef(null);
   const settingsPanelRef = useRef(null);
   const settingsBtnRef = useRef(null);
-  const chatInputRef = useRef(null);
+  const [hoveredNewChat, setHoveredNewChat] = useState(false);
 
   // Animation state
   const [morphRect, setMorphRect] = useState(null);
   const [morphText, setMorphText] = useState('');
   const [morphPhase, setMorphPhase] = useState(0); // 0=idle, 1=moving, 2=done
-  const morphRef = useRef(null);
+  // Fix 7: removed unused morphRef
   const initialBarRef = useRef(null);
 
-  const t = tokens(isDark);
+  // Fix 2: memoize tokens to avoid re-creating on every render
+  const t = useMemo(() => tokens(isDark), [isDark]);
 
   // Persist settings
   useEffect(() => {
@@ -673,7 +850,7 @@ export default function App() {
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
       html, body, #root { height: 100%; }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
         overflow: hidden;
       }
@@ -748,17 +925,7 @@ export default function App() {
   const streamResponse = useCallback(async (userMsg, history) => {
     setIsStreaming(true);
     abortRef.current = new AbortController();
-    const assistantIdx = history.length + 1; // after user msg
-
-    const appendMsg = (idx, chunk) => {
-      setMessages(prev => {
-        const copy = [...prev];
-        if (copy[idx]) {
-          copy[idx] = { ...copy[idx], content: copy[idx].content + chunk };
-        }
-        return copy;
-      });
-    };
+    // Fix 7: removed unused assistantIdx and appendMsg
 
     // Add empty assistant placeholder
     setMessages(prev => [
@@ -808,6 +975,9 @@ export default function App() {
         const decoder = new TextDecoder();
         let buffer = '';
 
+        // Fix 4: use streamDone flag so [DONE] breaks the outer while loop too
+        let streamDone = false;
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -817,7 +987,33 @@ export default function App() {
           for (const line of lines) {
             if (!line.startsWith('data:')) continue;
             const data = line.slice(5).trim();
-            if (data === '[DONE]') break;
+            if (data === '[DONE]') {
+              streamDone = true;
+              break; // exits inner for loop
+            }
+            try {
+              const json = JSON.parse(data);
+              const chunk = json.choices?.[0]?.delta?.content ?? '';
+              if (chunk) {
+                setMessages(prev => {
+                  const copy = [...prev];
+                  const last = copy[copy.length - 1];
+                  if (last?.role === 'assistant') {
+                    copy[copy.length - 1] = { ...last, content: last.content + chunk };
+                  }
+                  return copy;
+                });
+              }
+            } catch { /* skip */ }
+          }
+          // Fix 4: break outer while loop when [DONE] was seen
+          if (streamDone) break;
+        }
+
+        // Fix 5: process any remaining content in buffer after the loop
+        if (buffer.trim().startsWith('data:')) {
+          const data = buffer.trim().slice(5).trim();
+          if (data && data !== '[DONE]') {
             try {
               const json = JSON.parse(data);
               const chunk = json.choices?.[0]?.delta?.content ?? '';
@@ -904,48 +1100,6 @@ export default function App() {
     abortRef.current?.abort();
   }, []);
 
-  // ── Morph overlay (ANIMATING state) ──────────────────────────────────────────
-  const MorphOverlay = () => {
-    if (!morphRect || morphPhase === 0) return null;
-
-    // Target: upper-right area, compact bubble
-    const targetTop = 24;
-    const targetRight = 24;
-    const targetWidth = Math.min(360, window.innerWidth * 0.6);
-    const targetLeft = window.innerWidth - targetRight - targetWidth;
-
-    const style = {
-      position: 'fixed',
-      top: morphPhase === 1 ? morphRect.top : targetTop,
-      left: morphPhase === 1 ? morphRect.left : targetLeft,
-      width: morphPhase === 1 ? morphRect.width : targetWidth,
-      height: morphPhase === 1 ? morphRect.height : 'auto',
-      borderRadius: morphPhase === 1 ? 999 : '20px 20px 4px 20px',
-      background: morphPhase === 1 ? t.glassBgBase : t.userBubbleBg,
-      backdropFilter: 'blur(24px)',
-      WebkitBackdropFilter: 'blur(24px)',
-      border: `1px solid ${morphPhase === 1 ? t.glassBorder : t.userBubbleBorder}`,
-      boxShadow: morphPhase === 1
-        ? 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)'
-        : '0 0 20px rgba(0,37,201,0.2)',
-      zIndex: 2000,
-      padding: '14px 18px',
-      display: 'flex', alignItems: 'center',
-      fontSize: 15, color: t.textPrimary, lineHeight: 1.5,
-      overflow: 'hidden',
-      transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)',
-      opacity: morphPhase === 2 ? 0 : 1,
-    };
-
-    return (
-      <div style={style}>
-        <span style={{ opacity: morphPhase === 1 ? 0.7 : 1, transition: 'opacity 0.3s ease' }}>
-          {morphText}
-        </span>
-      </div>
-    );
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────────
   const [hoveredSettingsBtn, setHoveredSettingsBtn] = useState(false);
 
@@ -954,12 +1108,49 @@ export default function App() {
       height: '100vh', width: '100vw',
       backgroundColor: t.bgColor,
       backgroundImage: t.bgGradient,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       WebkitFontSmoothing: 'antialiased',
       position: 'relative',
       overflow: 'hidden',
       transition: 'background-color 0.4s ease',
     }}>
+
+      {/* ── New Chat Button (chat mode only) ── */}
+      {appState === 'CHAT_ACTIVE' && (
+        <button
+          onMouseEnter={() => setHoveredNewChat(true)}
+          onMouseLeave={() => setHoveredNewChat(false)}
+          onClick={() => {
+            if (abortRef.current) abortRef.current.abort();
+            setMessages([]);
+            setInputValue('');
+            setFiles([]);
+            setIsStreaming(false);
+            setAppState('IDLE');
+          }}
+          aria-label="New Chat"
+          style={{
+            position: 'fixed', top: 24, right: 24, zIndex: 1001,
+            width: 44, height: 44, borderRadius: '50%',
+            background: hoveredNewChat ? 'rgba(255,255,255,0.08)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)'),
+            border: `1px solid ${hoveredNewChat ? 'rgba(0,37,201,0.5)' : t.settingsBorder}`,
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            boxShadow: hoveredNewChat
+              ? '0 0 20px rgba(0,37,201,0.25), inset 0 1px 1px rgba(255,255,255,0.1)'
+              : 'inset 0 1px 1px rgba(255,255,255,0.05), 0 4px 20px rgba(0,0,0,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', color: hoveredNewChat ? t.textPrimary : t.textSecondary,
+            transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
+            transform: hoveredNewChat ? 'scale(1.05)' : 'scale(1)',
+          }}
+        >
+          {/* New chat icon: pencil + plus */}
+          <svg viewBox="0 0 24 24" width={20} height={20} stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      )}
 
       {/* ── Settings Button (always visible) ── */}
       <div style={{ position: 'fixed', top: 24, left: 24, zIndex: 1001 }}>
@@ -999,8 +1190,13 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Morph Animation Overlay ── */}
-      <MorphOverlay />
+      {/* ── Morph Animation Overlay — Fix 1: now a standalone component receiving props ── */}
+      <MorphOverlay
+        morphRect={morphRect}
+        morphPhase={morphPhase}
+        morphText={morphText}
+        t={t}
+      />
 
       {/* ── IDLE STATE ── */}
       {(appState === 'IDLE' || appState === 'ANIMATING') && (
@@ -1016,17 +1212,18 @@ export default function App() {
         }}>
           {/* Tagline */}
           <div style={{
-            textAlign: 'center', marginBottom: 12,
+            textAlign: 'center', marginBottom: 20,
             opacity: inputFocused ? 0.4 : 1,
             transition: 'opacity 0.3s ease',
           }}>
             <div style={{
-              fontSize: 13, color: t.textSecondary, letterSpacing: '0.1em',
-              textTransform: 'uppercase', fontWeight: 500, marginBottom: 6,
+              // Fix 12: responsive title — clamp instead of fixed 72px
+              fontSize: 'clamp(36px, 10vw, 72px)',
+              color: t.textPrimary,
+              fontFamily: '"ByteBounce", "Inter", sans-serif',
+              letterSpacing: '0.04em', lineHeight: 1,
+              textShadow: '0 0 40px rgba(0,37,201,0.4)',
             }}>HYDRA</div>
-            <div style={{ fontSize: 13, color: t.textSecondary, opacity: 0.6 }}>
-              Multi-agent task orchestration
-            </div>
           </div>
 
           {/* Input bar */}
@@ -1097,14 +1294,14 @@ export default function App() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Bottom Input */}
+          {/* Bottom Input — Fix 6: autoFocusChat instead of broken ref forwarding */}
           <div className="hydra-chat-input-wrap" style={{
             padding: '12px 24px 20px 24px',
             display: 'flex', justifyContent: 'center',
           }}>
             <div style={{ width: '100%', maxWidth: 720 }}>
               <InputBar
-                ref={chatInputRef}
+                autoFocusChat
                 value={inputValue}
                 onChange={setInputValue}
                 onSend={handleSend}
