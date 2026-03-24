@@ -137,6 +137,12 @@ HYDRA_DEFAULT_MODEL=azure/gpt-4o
 # Google Gemini
 HYDRA_API_KEY=<gemini-key>
 HYDRA_DEFAULT_MODEL=gemini/gemini-2.5-flash
+
+# DeepSeek
+HYDRA_API_KEY=sk-...
+HYDRA_DEFAULT_MODEL=deepseek/deepseek-chat
+HYDRA_BRAIN_MODEL=deepseek/deepseek-reasoner  # R1 for planning
+HYDRA_POST_BRAIN_MODEL=deepseek/deepseek-chat
 ```
 
 ---
