@@ -380,10 +380,12 @@ class WritePptxTool(BaseTool):
 
             # Layout indices in the default template:
             # 0 = Title Slide, 1 = Title and Content, 6 = Blank
+            # Guard against templates with fewer layouts.
+            n_layouts = len(prs.slide_layouts)
             layout_map = {
-                "title": prs.slide_layouts[0],
-                "content": prs.slide_layouts[1],
-                "blank": prs.slide_layouts[6],
+                "title": prs.slide_layouts[min(0, n_layouts - 1)],
+                "content": prs.slide_layouts[min(1, n_layouts - 1)],
+                "blank": prs.slide_layouts[min(6, n_layouts - 1)],
             }
 
             for i, slide_def in enumerate(slides):

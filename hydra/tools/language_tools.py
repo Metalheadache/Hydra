@@ -17,14 +17,20 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-async def _make_litellm_call(model: str, api_key: str, api_base: str | None, prompt: str) -> str:
+async def _make_litellm_call(
+    model: str,
+    api_key: str,
+    api_base: str | None,
+    prompt: str,
+    max_tokens: int = 4096,
+) -> str:
     """Make a focused single-turn LLM call via litellm. Returns the text response."""
     import litellm
 
     kwargs = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
     }
     if api_key:
         kwargs["api_key"] = api_key
@@ -33,6 +39,17 @@ async def _make_litellm_call(model: str, api_key: str, api_base: str | None, pro
 
     response = await litellm.acompletion(**kwargs)
     return response.choices[0].message.content or ""
+
+
+def _get_model_params(config) -> tuple[str, str, str | None]:
+    """Return (model, api_key, api_base) from config or environment variables."""
+    if config is not None:
+        return config.default_model, config.api_key, config.api_base
+    import os
+    model = os.environ.get("HYDRA_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
+    api_key = os.environ.get("HYDRA_API_KEY", "")
+    api_base = os.environ.get("HYDRA_API_BASE") or None
+    return model, api_key, api_base
 
 
 # ── TranslationTool ───────────────────────────────────────────────────────────
@@ -69,16 +86,6 @@ class TranslationTool(BaseTool):
     def __init__(self, config: "HydraConfig | None" = None) -> None:
         self._config = config
 
-    def _get_model_params(self) -> tuple[str, str, str | None]:
-        """Return (model, api_key, api_base)."""
-        if self._config is not None:
-            return self._config.default_model, self._config.api_key, self._config.api_base
-        import os
-        model = os.environ.get("HYDRA_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
-        api_key = os.environ.get("HYDRA_API_KEY", "")
-        api_base = os.environ.get("HYDRA_API_BASE") or None
-        return model, api_key, api_base
-
     async def execute(
         self,
         text: str,
@@ -91,7 +98,7 @@ class TranslationTool(BaseTool):
             return ToolResult(success=False, error="target_language cannot be empty")
 
         try:
-            model, api_key, api_base = self._get_model_params()
+            model, api_key, api_base = _get_model_params(self._config)
             if source_language == "auto-detect":
                 prompt = (
                     f"Translate the following text to {target_language}. "
@@ -105,7 +112,7 @@ class TranslationTool(BaseTool):
                     f"<text_to_translate>\n{text}\n</text_to_translate>"
                 )
 
-            translation = await _make_litellm_call(model, api_key, api_base, prompt)
+            translation = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=2048)
             logger.info(
                 "translation_done",
                 source=source_language,
@@ -163,15 +170,6 @@ class SummarizerTool(BaseTool):
     def __init__(self, config: "HydraConfig | None" = None) -> None:
         self._config = config
 
-    def _get_model_params(self) -> tuple[str, str, str | None]:
-        if self._config is not None:
-            return self._config.default_model, self._config.api_key, self._config.api_base
-        import os
-        model = os.environ.get("HYDRA_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
-        api_key = os.environ.get("HYDRA_API_KEY", "")
-        api_base = os.environ.get("HYDRA_API_BASE") or None
-        return model, api_key, api_base
-
     async def execute(
         self,
         text: str,
@@ -196,14 +194,14 @@ class SummarizerTool(BaseTool):
             length_instruction = f" Keep the summary to approximately {max_length}."
 
         try:
-            model, api_key, api_base = self._get_model_params()
+            model, api_key, api_base = _get_model_params(self._config)
             prompt = (
                 f"Summarize the following text. {style_instruction}{length_instruction} "
                 "Return ONLY the summary, with no preamble or extra commentary.\n\n"
                 f"<text_to_summarize>\n{text}\n</text_to_summarize>"
             )
 
-            summary = await _make_litellm_call(model, api_key, api_base, prompt)
+            summary = await _make_litellm_call(model, api_key, api_base, prompt, max_tokens=4096)
             logger.info(
                 "summarization_done",
                 style=style,

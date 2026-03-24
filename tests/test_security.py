@@ -260,3 +260,130 @@ async def test_path_traversal_sibling_directory_blocked():
     finally:
         import shutil
         shutil.rmtree(base, ignore_errors=True)
+
+
+# ── Path Traversal: WriteXlsxTool and WritePptxTool ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_path_traversal_write_xlsx_blocked():
+    """../../evil.xlsx path traversal must be blocked in WriteXlsxTool."""
+    from hydra.tools.document_tools import WriteXlsxTool
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tool = WriteXlsxTool(output_dir=tmpdir)
+        result = await tool.execute(
+            filename="../../evil.xlsx",
+            sheets=[{"name": "S", "headers": ["a"], "rows": [["1"]]}],
+        )
+        assert not result.success
+        assert "traversal" in (result.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_path_traversal_write_pptx_blocked():
+    """../../evil.pptx path traversal must be blocked in WritePptxTool."""
+    from hydra.tools.document_tools import WritePptxTool
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tool = WritePptxTool(output_dir=tmpdir)
+        result = await tool.execute(
+            filename="../../evil.pptx",
+            slides=[{"title": "Pwned"}],
+        )
+        assert not result.success
+        assert "traversal" in (result.error or "").lower()
+
+
+# ── PdfReaderTool allowed_dirs ─────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_pdf_reader_allowed_dirs_blocks():
+    """PdfReaderTool must block access to paths outside allowed_dirs."""
+    from hydra.tools.document_tools import PdfReaderTool
+
+    tool = PdfReaderTool(allowed_dirs=["/tmp/safe_hydra_test"])
+    result = await tool.execute(filepath="/etc/passwd")
+    assert not result.success
+    assert "access denied" in (result.error or "").lower() or "not under" in (result.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_pdf_reader_allowed_dirs_allows():
+    """PdfReaderTool must allow access to paths inside allowed_dirs."""
+    import fitz  # pymupdf — skip if not available
+
+    try:
+        import fitz
+    except ImportError:
+        pytest.skip("pymupdf not available")
+
+    from hydra.tools.document_tools import PdfReaderTool
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pdf_path = Path(tmpdir) / "test.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "Allowed dir test")
+        doc.save(str(pdf_path))
+        doc.close()
+
+        tool = PdfReaderTool(allowed_dirs=[tmpdir])
+        result = await tool.execute(filepath=str(pdf_path))
+        assert result.success, f"Expected success, got: {result.error}"
+        assert "Allowed dir test" in result.data["text"]
+
+
+# ── WebFetchTool: follow_redirects=False ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_web_fetch_no_redirect_follow():
+    """WebFetchTool must NOT follow redirects (follow_redirects=False)."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from hydra.tools.research_tools import WebFetchTool
+
+    tool = WebFetchTool()
+    captured_kwargs = {}
+
+    # Capture the kwargs passed when AsyncClient is instantiated
+    original_async_client = __import__("httpx").AsyncClient
+
+    class CapturingClient:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self._mock = MagicMock()
+
+        async def __aenter__(self):
+            resp = MagicMock()
+            resp.headers = {"content-type": "text/plain"}
+            resp.text = "hello"
+            resp.raise_for_status = MagicMock()
+            self._mock.get = AsyncMock(return_value=resp)
+            return self._mock
+
+        async def __aexit__(self, *args):
+            return False
+
+    with patch("hydra.tools.research_tools.httpx.AsyncClient", CapturingClient):
+        await tool.execute(url="https://example.com")
+
+    assert captured_kwargs.get("follow_redirects") is False, (
+        "WebFetchTool must set follow_redirects=False"
+    )
+
+
+# ── DataTransformTool: negative limit ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_data_transform_negative_limit_error():
+    """DataTransformTool limit with count=-1 must return an error."""
+    from hydra.tools.data_tools import DataTransformTool
+
+    tool = DataTransformTool()
+    data = [{"x": 1}, {"x": 2}, {"x": 3}]
+    result = await tool.execute(
+        data=data,
+        operations=[{"type": "limit", "params": {"count": -1}}],
+    )
+    assert not result.success
+    assert result.error is not None
+    assert "non-negative" in (result.error or "").lower() or "negative" in (result.error or "").lower()

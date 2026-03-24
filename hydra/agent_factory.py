@@ -13,7 +13,7 @@ from hydra.state_manager import StateManager
 from hydra.tool_registry import ToolRegistry
 from hydra.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
 from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
-from hydra.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool
+from hydra.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool, PdfReaderTool
 from hydra.tools.data_tools import ChartGeneratorTool
 
 logger = structlog.get_logger(__name__)
@@ -130,6 +130,10 @@ class AgentFactory:
             # Chart generator also registers output files
             "generate_chart": ChartGeneratorTool,
         }
+        # Tools that need per-agent instantiation with allowed_dirs from the shared registry.
+        pdf_tool_classes: dict[str, type] = {
+            "read_pdf": PdfReaderTool,
+        }
 
         for tool_name in spec.tools_needed:
             if tool_name in memory_tool_factories:
@@ -144,6 +148,12 @@ class AgentFactory:
                     output_dir=output_dir,
                     state_manager=self.state_manager,
                 )
+                per_agent.register(fresh_tool)
+            elif tool_name in pdf_tool_classes:
+                # Create a fresh PdfReaderTool preserving allowed_dirs from the shared registry
+                existing = self.tool_registry.get(tool_name)
+                allowed_dirs = existing._allowed_dirs if existing is not None else None
+                fresh_tool = pdf_tool_classes[tool_name](allowed_dirs=allowed_dirs)
                 per_agent.register(fresh_tool)
             else:
                 existing = self.tool_registry.get(tool_name)

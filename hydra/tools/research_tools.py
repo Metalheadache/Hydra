@@ -171,7 +171,7 @@ class WebFetchTool(BaseTool):
                     "Mozilla/5.0 (compatible; HydraBot/1.0; +https://github.com/hydra-framework)"
                 )
             }
-            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
                 resp = await client.get(url, headers=headers)
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "")

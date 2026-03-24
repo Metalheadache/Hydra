@@ -173,12 +173,12 @@ class ChartGeneratorTool(BaseTool):
             elif chart_type == "pie":
                 labels = data.get("labels", [])
                 values = data.get("values", [])
-                colors = ["#2F5496", "#4472C4", "#5B9BD5", "#70AD47", "#ED7D31", "#FFC000", "#FF0000"]
+                colors = list(plt.cm.tab20.colors)[:len(values)]
                 wedges, texts, autotexts = ax.pie(
                     values,
                     labels=labels,
                     autopct="%1.1f%%",
-                    colors=colors[:len(values)],
+                    colors=colors,
                     startangle=90,
                     pctdistance=0.85,
                 )
@@ -375,4 +375,6 @@ class DataTransformTool(BaseTool):
     @staticmethod
     def _op_limit(data: list[dict], params: dict) -> list[dict]:
         count = int(params["count"])
+        if count < 0:
+            raise ValueError("limit count must be non-negative")
         return data[:count]

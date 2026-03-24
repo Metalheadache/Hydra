@@ -80,7 +80,7 @@ class ToolRegistry:
             WriteDocxTool(output_dir=output_dir),
             WriteXlsxTool(output_dir=output_dir),
             WritePptxTool(output_dir=output_dir),
-            PdfReaderTool(),
+            PdfReaderTool(allowed_dirs=[output_dir]),
             # Research tools
             WebSearchTool(config=config),
             WebFetchTool(),
