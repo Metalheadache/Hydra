@@ -283,11 +283,19 @@ When using `hydra.stream()`, you receive real-time events for every pipeline sta
 
 ## Security
 
-- **Shell execution**: Commands whitelisted (`ls`, `cat`, `head`, `wc`, `grep`, `find`, `jq`). Shell metacharacters (`|`, `;`, `&`, `` ` ``) blocked. Uses `subprocess_exec` not `subprocess_shell`.
-- **Python execution**: Runs in isolated temp directory. ⚠️ Network access not blocked at OS level — use Docker `--network none` for production.
-- **SSRF prevention**: HTTP tools block private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16). Redirects disabled.
-- **Path traversal**: All file tools validate output paths with `Path.is_relative_to()`. PDF reader has `allowed_dirs` sandboxing.
-- **Tool isolation**: Stateful tools (memory, file) get per-agent instances — no shared mutable state between concurrent runs.
+Hydra runs LLM-generated code and tool calls. Here's what's protected and what's not:
+
+**What's hardened:**
+- **Shell execution**: Whitelist-only (`ls`, `cat`, `head`, `wc`, `grep`, `find`, `jq`). Metacharacters blocked. Uses `subprocess_exec` (no shell interpretation). Won't cover every use case — if your agents need `curl` or `tar`, you'll need to extend the whitelist and accept the risk.
+- **Path traversal**: File tools validate paths with `Path.is_relative_to()`. PDF reader has `allowed_dirs` restriction.
+- **HTTP tools**: Private IPs blocked (RFC 1918, link-local, loopback). Redirects disabled. Standard SSRF prevention — not bulletproof against DNS rebinding.
+- **Tool isolation**: Stateful tools get per-agent instances. No shared mutable state between concurrent runs.
+
+**What's NOT sandboxed (be honest with yourself):**
+- **Python execution**: Runs in a temp directory but has **full network access and filesystem read**. LLM-generated code can `import socket`, read `/etc/passwd`, or call home. For real isolation, wrap Hydra in Docker with `--network none` and volume restrictions. We don't pretend otherwise.
+- **LLM prompt injection**: Upstream agent outputs are injected into downstream prompts. A compromised agent could craft output that manipulates downstream agents. XML delimiters help but aren't a guarantee.
+
+**For production deployment**, run Hydra inside a container with restricted network and filesystem access. The framework provides defense-in-depth at the application layer, but OS-level isolation is your responsibility.
 
 ---
 

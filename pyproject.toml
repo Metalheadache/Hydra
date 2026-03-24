@@ -42,9 +42,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hydra-framework/hydra"
-Repository = "https://github.com/hydra-framework/hydra"
-Issues = "https://github.com/hydra-framework/hydra/issues"
+Homepage = "https://github.com/Metalheadache/Hydra"
+Repository = "https://github.com/Metalheadache/Hydra"
+Issues = "https://github.com/Metalheadache/Hydra/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
