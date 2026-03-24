@@ -27,3 +27,7 @@ htmlcov/
 
 # Output
 hydra_output/
+TODO-frontend.md
+frontend-spec.md
+react-reference.js
+frontend/README.md
