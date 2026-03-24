@@ -45,6 +45,10 @@ class EventType(str, Enum):
     # File processing
     FILE_PROCESSED = "file_processed"   # after each file is processed
 
+    # Human-in-the-loop confirmation
+    CONFIRMATION_REQUIRED = "confirmation_required"   # tool needs approval
+    CONFIRMATION_RESPONSE = "confirmation_response"   # user approved/rejected
+
     # Pipeline
     PIPELINE_START = "pipeline_start"
     PIPELINE_COMPLETE = "pipeline_complete"
@@ -81,6 +85,10 @@ class EventBus:
         self._queue: asyncio.Queue[HydraEvent | None] = asyncio.Queue(maxsize=10000)
         self._has_stream_consumer: bool = False
         self._pending_tasks: set[asyncio.Task] = set()
+
+        # Confirmation gate state
+        self._pending_confirmations: dict[str, asyncio.Event] = {}
+        self._confirmation_responses: dict[str, bool] = {}
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -150,6 +158,58 @@ class EventBus:
             if event is None:
                 break
             yield event
+
+
+    # ── Confirmation gates ────────────────────────────────────────────────────
+
+    async def request_confirmation(
+        self,
+        confirmation_id: str,
+        tool_name: str,
+        args: dict,
+    ) -> bool:
+        """
+        Emit a CONFIRMATION_REQUIRED event and wait for an external response.
+
+        Returns True if approved, False if rejected.
+        The caller is responsible for applying a timeout (e.g. asyncio.wait_for).
+        """
+        event = asyncio.Event()
+        self._pending_confirmations[confirmation_id] = event
+        self._confirmation_responses[confirmation_id] = False  # default: rejected
+
+        await self.emit(HydraEvent(
+            type=EventType.CONFIRMATION_REQUIRED,
+            data={
+                "confirmation_id": confirmation_id,
+                "tool_name": tool_name,
+                "args": args,
+            },
+        ))
+
+        await event.wait()
+        result = self._confirmation_responses.pop(confirmation_id, False)
+        self._pending_confirmations.pop(confirmation_id, None)
+        return result
+
+    async def respond_to_confirmation(self, confirmation_id: str, approved: bool) -> None:
+        """
+        Called by the frontend/API to approve or reject a pending confirmation.
+
+        If the confirmation_id is not found (already timed out), this is a no-op.
+        """
+        self._confirmation_responses[confirmation_id] = approved
+        event = self._pending_confirmations.get(confirmation_id)
+        if event is not None:
+            event.set()
+
+        await self.emit(HydraEvent(
+            type=EventType.CONFIRMATION_RESPONSE,
+            data={
+                "confirmation_id": confirmation_id,
+                "approved": approved,
+            },
+        ))
 
 
 async def _safe_async_call(

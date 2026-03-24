@@ -16,6 +16,7 @@ import structlog
 from hydra.models import AgentOutput, AgentStatus, TaskPlan
 
 if TYPE_CHECKING:
+    from hydra.audit import AuditLogger
     from hydra.config import HydraConfig
     from hydra.events import EventBus
     from hydra.state_manager import StateManager
@@ -40,11 +41,13 @@ class PostBrain:
         state_manager: "StateManager",
         plan: TaskPlan,
         event_bus: "EventBus | None" = None,
+        audit_logger: "AuditLogger | None" = None,
     ) -> None:
         self.config = config
         self.state_manager = state_manager
         self.plan = plan
         self.event_bus = event_bus
+        self.audit_logger = audit_logger
         self._scoring_semaphore = asyncio.Semaphore(3)
 
     async def synthesize(self) -> dict:
@@ -240,6 +243,14 @@ class PostBrain:
             feedback=feedback[:100] if feedback else "",
         )
 
+        if self.audit_logger:
+            self.audit_logger.log_quality_score(
+                agent_id=spec.agent_id if spec else sub_task_id,
+                sub_task_id=sub_task_id,
+                score=score,
+                feedback=feedback,
+            )
+
         if self.event_bus:
             from hydra.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
@@ -404,6 +415,7 @@ class PostBrain:
             ))
 
         try:
+            synth_start_ms = int(time.monotonic() * 1000)
             if self.event_bus:
                 # ── Streaming path (event_bus exists) ────────────────────────
                 stream_kwargs = dict(call_kwargs)
@@ -432,6 +444,16 @@ class PostBrain:
                 # ── Non-streaming path (no event_bus) ────────────────────────
                 raw_response = await litellm.acompletion(**call_kwargs)
                 final_text = (raw_response.choices[0].message.content or "") if raw_response.choices else ""
+
+            synth_duration_ms = int(time.monotonic() * 1000) - synth_start_ms
+            if self.audit_logger:
+                self.audit_logger.log_llm_call(
+                    model=self.config.post_brain_model,
+                    tokens_in=0,
+                    tokens_out=0,
+                    duration_ms=synth_duration_ms,
+                    agent_id="post_brain_synthesis",
+                )
 
             return final_text
         except Exception as exc:

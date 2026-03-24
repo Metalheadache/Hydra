@@ -4,8 +4,10 @@ Hydra Agent — executes a single sub-task with LLM + tool-use loop.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 
 import litellm
@@ -15,6 +17,7 @@ from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask, ToolResul
 from hydra.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from hydra.audit import AuditLogger
     from hydra.config import HydraConfig
     from hydra.events import EventBus
     from hydra.state_manager import StateManager
@@ -82,6 +85,7 @@ class Agent:
         state_manager: "StateManager",
         config: "HydraConfig",
         event_bus: "EventBus | None" = None,
+        audit_logger: "AuditLogger | None" = None,
     ) -> None:
         self.agent_spec = agent_spec
         self.sub_task = sub_task
@@ -89,6 +93,7 @@ class Agent:
         self.state_manager = state_manager
         self.config = config
         self.event_bus = event_bus
+        self.audit_logger = audit_logger
 
         # Build tool schemas for this agent's assigned tools
         self.tool_schemas = tool_registry.get_schemas_for(agent_spec.tools_needed)
@@ -248,6 +253,7 @@ class Agent:
                 stream_kwargs = dict(call_kwargs)
                 stream_kwargs["stream"] = True
 
+                llm_start_ms = int(time.monotonic() * 1000)
                 stream_response = await litellm.acompletion(**stream_kwargs)
 
                 # Collect streaming chunks
@@ -290,10 +296,22 @@ class Agent:
                         usage_info = chunk.usage
 
                 # Track token usage
+                llm_duration_ms = int(time.monotonic() * 1000) - llm_start_ms
+                iter_tokens_in = 0
+                iter_tokens_out = 0
                 if usage_info:
+                    iter_tokens_in = getattr(usage_info, "prompt_tokens", 0)
+                    iter_tokens_out = getattr(usage_info, "completion_tokens", 0)
                     total_tokens += getattr(usage_info, "total_tokens", 0) or (
-                        getattr(usage_info, "prompt_tokens", 0)
-                        + getattr(usage_info, "completion_tokens", 0)
+                        iter_tokens_in + iter_tokens_out
+                    )
+                if self.audit_logger:
+                    self.audit_logger.log_llm_call(
+                        model=model,
+                        tokens_in=iter_tokens_in,
+                        tokens_out=iter_tokens_out,
+                        duration_ms=llm_duration_ms,
+                        agent_id=self.agent_spec.agent_id,
                     )
 
                 assembled_content = "".join(content_parts) or None
@@ -333,15 +351,29 @@ class Agent:
             else:
                 # ── Non-streaming path (no event_bus) ────────────────────────
                 # Use stream=False for simplicity — no token events needed.
+                llm_start_ms = int(time.monotonic() * 1000)
                 raw_response = await litellm.acompletion(**call_kwargs)
+                llm_duration_ms = int(time.monotonic() * 1000) - llm_start_ms
 
                 msg = raw_response.choices[0].message if raw_response.choices else None
                 content = msg.content if msg else ""
                 tcs = getattr(msg, "tool_calls", None) if msg else None
                 usage = getattr(raw_response, "usage", None)
+                ns_tokens_in = 0
+                ns_tokens_out = 0
                 if usage:
+                    ns_tokens_in = getattr(usage, "prompt_tokens", 0)
+                    ns_tokens_out = getattr(usage, "completion_tokens", 0)
                     total_tokens += getattr(usage, "total_tokens", 0) or (
-                        getattr(usage, "prompt_tokens", 0) + getattr(usage, "completion_tokens", 0)
+                        ns_tokens_in + ns_tokens_out
+                    )
+                if self.audit_logger:
+                    self.audit_logger.log_llm_call(
+                        model=model,
+                        tokens_in=ns_tokens_in,
+                        tokens_out=ns_tokens_out,
+                        duration_ms=llm_duration_ms,
+                        agent_id=self.agent_spec.agent_id,
                     )
 
                 if content:
@@ -407,11 +439,68 @@ class Agent:
                     error=f"Tool '{tool_name}' not found in registry.",
                 )
             else:
+                # ── Confirmation gate ─────────────────────────────────────────
+                # If the tool requires confirmation AND we have an event_bus,
+                # pause and wait for external approval.
+                if getattr(tool, "requires_confirmation", False) and self.event_bus:
+                    from hydra.events import EventType, HydraEvent
+                    confirmation_id = str(uuid.uuid4())
+                    timeout = self.config.per_agent_timeout_seconds
+                    try:
+                        approved = await asyncio.wait_for(
+                            self.event_bus.request_confirmation(
+                                confirmation_id=confirmation_id,
+                                tool_name=tool_name,
+                                args=kwargs,
+                            ),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self._log.warning(
+                            "confirmation_timeout",
+                            tool=tool_name,
+                            confirmation_id=confirmation_id,
+                        )
+                        approved = False
+
+                    if not approved:
+                        result = ToolResult(
+                            success=False,
+                            error="Tool execution rejected by user",
+                        )
+                        self._log.info("tool_rejected", tool=tool_name)
+                        if self.event_bus:
+                            await self.event_bus.emit(HydraEvent(
+                                type=EventType.AGENT_TOOL_RESULT,
+                                agent_id=self.agent_spec.agent_id,
+                                sub_task_id=self.agent_spec.sub_task_id,
+                                data={"tool": tool_name, "success": False, "error": result.error},
+                            ))
+                        content = json.dumps({"success": result.success, "data": result.data, "error": result.error})
+                        result_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": content,
+                        })
+                        continue
+
+                # Execute the tool
+                tool_start_ms = int(time.monotonic() * 1000)
                 try:
                     result = await tool.execute(**kwargs)
                 except Exception as exc:
                     self._log.error("tool_execution_exception", tool=tool_name, error=str(exc))
                     result = ToolResult(success=False, error=f"Tool '{tool_name}' raised an exception: {exc}")
+                tool_duration_ms = int(time.monotonic() * 1000) - tool_start_ms
+
+                if self.audit_logger:
+                    self.audit_logger.log_tool_execution(
+                        tool_name=tool_name,
+                        args=kwargs,
+                        result_success=result.success,
+                        duration_ms=tool_duration_ms,
+                        agent_id=self.agent_spec.agent_id,
+                    )
 
             self._log.debug("tool_result", tool=tool_name, success=result.success)
 

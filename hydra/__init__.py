@@ -24,6 +24,7 @@ from typing import AsyncGenerator, Callable
 import structlog
 
 from hydra.agent_factory import AgentFactory
+from hydra.audit import AuditLogger
 from hydra.brain import Brain
 from hydra.config import HydraConfig
 from hydra.events import EventBus, EventType, HydraEvent
@@ -277,7 +278,8 @@ class Hydra:
     ) -> dict:
         """Internal pipeline: Brain → Factory → Engine → PostBrain."""
         # Fresh state for each run
-        state = StateManager()
+        audit_logger = AuditLogger(self.config.output_directory)
+        state = StateManager(audit_logger=audit_logger)
         # Expose state to caller so partial results can be harvested on timeout
         if state_ref is not None:
             state_ref.append(state)
@@ -300,7 +302,10 @@ class Hydra:
         plan = await brain.plan(enhanced_task, has_files=bool(files))
 
         # 2. Factory: instantiate agents from plan
-        factory = AgentFactory(self.config, self.tool_registry, state, event_bus=event_bus)
+        factory = AgentFactory(
+            self.config, self.tool_registry, state, event_bus=event_bus,
+            audit_logger=audit_logger,
+        )
         agents = factory.create_agents(plan)
 
         # 3. Engine: execute DAG
@@ -308,7 +313,7 @@ class Hydra:
         await engine.execute()
 
         # 4. Post-Brain: quality check + synthesize
-        post_brain = PostBrain(self.config, state, plan, event_bus=event_bus)
+        post_brain = PostBrain(self.config, state, plan, event_bus=event_bus, audit_logger=audit_logger)
         result = await post_brain.synthesize()
 
         # Replace plan's original_task with enhanced_task (if files were attached)

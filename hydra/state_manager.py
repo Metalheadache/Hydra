@@ -5,12 +5,16 @@ Thread-safe shared state manager for inter-agent communication.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from hydra.models import AgentOutput, AgentStatus, FileAttachment
+
+if TYPE_CHECKING:
+    from hydra.audit import AuditLogger
 
 logger = structlog.get_logger(__name__)
 
@@ -34,7 +38,7 @@ class StateManager:
     - Execution summary statistics
     """
 
-    def __init__(self) -> None:
+    def __init__(self, audit_logger: "AuditLogger | None" = None) -> None:
         self._lock = asyncio.Lock()
         self._agent_outputs: dict[str, AgentOutput] = {}
         self._shared_context: dict[str, Any] = {}
@@ -42,6 +46,7 @@ class StateManager:
         self._uploaded_files: list[FileAttachment] = []   # uploaded file attachments
         self._start_time = time.monotonic()
         self._sub_task_to_role: dict[str, str] = {}  # sub_task_id → agent role
+        self.audit_logger = audit_logger
 
     # ── Agent output storage ──────────────────────────────────────────────────
 
@@ -54,6 +59,12 @@ class StateManager:
                 sub_task_id=sub_task_id,
                 status=output.status,
                 tokens=output.tokens_used,
+            )
+        if self.audit_logger:
+            self.audit_logger.log_state_mutation(
+                operation="write_output",
+                key=sub_task_id,
+                agent_id=output.agent_id,
             )
 
     def write_output_sync(self, sub_task_id: str, output: AgentOutput) -> None:
@@ -77,6 +88,36 @@ class StateManager:
 
     # ── Context injection ─────────────────────────────────────────────────────
 
+    def _sanitize_output(self, text: str) -> str:
+        """
+        Sanitize agent output to prevent prompt injection in downstream context.
+
+        Strips common injection patterns while preserving legitimate content.
+        """
+        if not isinstance(text, str) or not text:
+            return "" if not isinstance(text, str) else text
+        sanitized = text
+        # Remove system/user/assistant role markers (e.g. "system:", "User:")
+        sanitized = re.sub(
+            r'(?i)(system|user|assistant)\s*:',
+            '[role_marker_removed]',
+            sanitized,
+        )
+        # Remove XML-style instruction tags
+        sanitized = re.sub(
+            r'<\s*/?\s*(system|instruction|prompt|ignore)[^>]*>',
+            '[tag_removed]',
+            sanitized,
+            flags=re.IGNORECASE,
+        )
+        # Remove "ignore previous instructions" patterns
+        sanitized = re.sub(
+            r'(?i)ignore\s+(all\s+)?previous\s+(instructions?|context)',
+            '[injection_attempt_removed]',
+            sanitized,
+        )
+        return sanitized
+
     async def get_upstream_context(
         self,
         sub_task_id: str,
@@ -87,6 +128,7 @@ class StateManager:
 
         - Short outputs (≤ 500 tokens) are included in full.
         - Long outputs are truncated with a note to use memory_retrieve.
+        - Outputs are sanitized to prevent prompt injection.
         - Warns if total injected context exceeds 50 % of the estimated context window.
         """
         if not dependency_ids:
@@ -121,7 +163,10 @@ class StateManager:
                 else:
                     body = raw
 
-                section = f"### Result from: {role}\n{body}"
+                # Sanitize before injection to prevent prompt injection attacks
+                sanitized_body = self._sanitize_output(body)
+
+                section = f"<upstream_output source='{role}'>\n{sanitized_body}\n</upstream_output>"
                 sections.append(section)
                 total_chars += len(section)
 
@@ -146,6 +191,8 @@ class StateManager:
         async with self._lock:
             self._shared_context[key] = value
             logger.debug("shared_context_written", key=key)
+        if self.audit_logger:
+            self.audit_logger.log_state_mutation(operation="write_shared", key=key)
 
     async def read_shared(self, key: str) -> Any:
         """Read a value from shared context (used by memory_retrieve tool)."""
@@ -159,6 +206,8 @@ class StateManager:
         async with self._lock:
             self._files[filename] = filepath
             logger.info("file_registered", filename=filename, filepath=filepath)
+        if self.audit_logger:
+            self.audit_logger.log_state_mutation(operation="register_file", key=filename)
 
     async def get_all_files(self) -> dict[str, str]:
         """Return all registered files."""
@@ -172,6 +221,11 @@ class StateManager:
         async with self._lock:
             self._uploaded_files.extend(files)
             logger.debug("uploaded_files_stored", count=len(files))
+        if self.audit_logger:
+            for f in files:
+                self.audit_logger.log_state_mutation(
+                    operation="store_files", key=f.original_name
+                )
 
     async def get_files(self) -> list[FileAttachment]:
         """Get all uploaded files."""

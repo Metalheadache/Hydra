@@ -15,6 +15,7 @@ from hydra.state_manager import StateManager
 from hydra.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
+    from hydra.audit import AuditLogger
     from hydra.events import EventBus
 from hydra.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
 from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
@@ -40,11 +41,13 @@ class AgentFactory:
         tool_registry: ToolRegistry,
         state_manager: StateManager,
         event_bus: "EventBus | None" = None,
+        audit_logger: "AuditLogger | None" = None,
     ) -> None:
         self.config = config
         self.tool_registry = tool_registry
         self.state_manager = state_manager
         self.event_bus = event_bus
+        self.audit_logger = audit_logger
 
     def create_agents(self, plan: TaskPlan) -> dict[str, Agent]:
         """
@@ -83,6 +86,7 @@ class AgentFactory:
                 state_manager=self.state_manager,
                 config=self.config,
                 event_bus=self.event_bus,
+                audit_logger=self.audit_logger,
             )
             agents[spec.sub_task_id] = agent
             logger.debug(
