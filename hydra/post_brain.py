@@ -17,9 +17,11 @@ from hydra.models import AgentOutput, AgentStatus, TaskPlan
 
 if TYPE_CHECKING:
     from hydra.config import HydraConfig
+    from hydra.events import EventBus
     from hydra.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
+
 
 
 class PostBrain:
@@ -37,10 +39,13 @@ class PostBrain:
         config: "HydraConfig",
         state_manager: "StateManager",
         plan: TaskPlan,
+        event_bus: "EventBus | None" = None,
     ) -> None:
         self.config = config
         self.state_manager = state_manager
         self.plan = plan
+        self.event_bus = event_bus
+        self._scoring_semaphore = asyncio.Semaphore(3)
 
     async def synthesize(self) -> dict:
         """
@@ -67,12 +72,26 @@ class PostBrain:
         warnings.extend(gate_warnings)
 
         # ── 2. LLM quality scoring ────────────────────────────────────────────
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.QUALITY_START,
+                data={"agents_to_score": len(all_outputs)},
+            ))
+
         agents_needing_retry = await self._run_quality_scoring(all_outputs)
         for sub_task_id in agents_needing_retry:
             warnings.append(
                 f"Sub-task '{sub_task_id}' scored below quality threshold "
                 f"(min={self.config.min_quality_score}) and is flagged for retry."
             )
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.QUALITY_RETRY,
+                    sub_task_id=sub_task_id,
+                    data={"reason": "score_below_threshold"},
+                ))
 
         # ── 3. Synthesis (LLM) ────────────────────────────────────────────────
         synthesis_input = self._format_outputs_for_synthesis(all_outputs)
@@ -163,17 +182,18 @@ class PostBrain:
         if not scorable:
             return []
 
-        # Run all scoring coroutines in parallel
-        scores = await asyncio.gather(
-            *[
-                self._score_single_output(
+        async def _score_with_semaphore(sub_task_id: str):
+            async with self._scoring_semaphore:
+                return await self._score_single_output(
                     sub_task_id=sub_task_id,
                     output=all_outputs[sub_task_id],
                     sub_task_index=sub_task_index,
                     agent_spec_index=agent_spec_index,
                 )
-                for sub_task_id in scorable
-            ]
+
+        # Run all scoring coroutines in parallel (semaphore limits concurrency to 3)
+        scores = await asyncio.gather(
+            *[_score_with_semaphore(sub_task_id) for sub_task_id in scorable]
         )
 
         # Map results back and determine retry candidates
@@ -219,6 +239,14 @@ class PostBrain:
             score=score,
             feedback=feedback[:100] if feedback else "",
         )
+
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.QUALITY_SCORE,
+                sub_task_id=sub_task_id,
+                data={"score": score, "feedback": feedback},
+            ))
 
         return score, feedback
 
@@ -360,7 +388,7 @@ class PostBrain:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            "max_tokens": self.config.max_tokens_synthesis,  # Use dedicated synthesis token limit
+            "max_tokens": self.config.max_tokens_synthesis,
             "temperature": 0.3,
         }
         if self.config.api_key:
@@ -368,9 +396,44 @@ class PostBrain:
         if self.config.api_base:
             call_kwargs["api_base"] = self.config.api_base
 
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.SYNTHESIS_START,
+                data={},
+            ))
+
         try:
-            response = await litellm.acompletion(**call_kwargs)
-            return response.choices[0].message.content or ""
+            if self.event_bus:
+                # ── Streaming path (event_bus exists) ────────────────────────
+                stream_kwargs = dict(call_kwargs)
+                stream_kwargs["stream"] = True
+                raw_response = await litellm.acompletion(**stream_kwargs)
+
+                content_parts: list[str] = []
+                async for chunk in raw_response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta and delta.content:
+                        content_parts.append(delta.content)
+                        from hydra.events import EventType, HydraEvent
+                        await self.event_bus.emit(HydraEvent(
+                            type=EventType.SYNTHESIS_TOKEN,
+                            data={"token": delta.content},
+                        ))
+
+                final_text = "".join(content_parts)
+
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.SYNTHESIS_COMPLETE,
+                    data={"length": len(final_text)},
+                ))
+            else:
+                # ── Non-streaming path (no event_bus) ────────────────────────
+                raw_response = await litellm.acompletion(**call_kwargs)
+                final_text = (raw_response.choices[0].message.content or "") if raw_response.choices else ""
+
+            return final_text
         except Exception as exc:
             logger.error("synthesis_llm_failed", error=str(exc))
             # Fallback: return the raw concatenated outputs

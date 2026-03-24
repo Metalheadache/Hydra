@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import litellm
 import structlog
@@ -14,6 +14,9 @@ import structlog
 from hydra.config import HydraConfig
 from hydra.models import TaskPlan
 from hydra.tool_registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from hydra.events import EventBus
 
 logger = structlog.get_logger(__name__)
 
@@ -50,9 +53,15 @@ class Brain:
     4. Return a single JSON object matching the TaskPlan schema.
     """
 
-    def __init__(self, config: HydraConfig, tool_registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        config: HydraConfig,
+        tool_registry: ToolRegistry,
+        event_bus: "EventBus | None" = None,
+    ) -> None:
         self.config = config
         self.tool_registry = tool_registry
+        self.event_bus = event_bus
 
     async def plan(self, task: str) -> TaskPlan:
         """
@@ -62,6 +71,13 @@ class Brain:
             ValueError: If the LLM cannot produce a valid TaskPlan after retries.
         """
         logger.info("brain_planning", task_preview=task[:120])
+
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.BRAIN_START,
+                data={"task_preview": task[:120]},
+            ))
 
         system_prompt = self._build_system_prompt()
         user_message = f"Decompose this task into a complete execution plan:\n\n{task}"
@@ -79,6 +95,17 @@ class Brain:
             try:
                 plan = await self._call_llm(system_prompt, user_message)
                 logger.info("brain_plan_ready", sub_tasks=len(plan.sub_tasks), groups=len(plan.execution_groups))
+
+                if self.event_bus:
+                    from hydra.events import EventType, HydraEvent
+                    await self.event_bus.emit(HydraEvent(
+                        type=EventType.BRAIN_COMPLETE,
+                        data={
+                            "sub_tasks": len(plan.sub_tasks),
+                            "groups": len(plan.execution_groups),
+                        },
+                    ))
+
                 return plan
             except Exception as exc:
                 last_error = exc

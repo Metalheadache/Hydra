@@ -15,6 +15,7 @@ from hydra.models import AgentOutput, AgentStatus, TaskPlan
 
 if TYPE_CHECKING:
     from hydra.config import HydraConfig
+    from hydra.events import EventBus
     from hydra.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
@@ -38,11 +39,13 @@ class ExecutionEngine:
         agents: dict[str, Agent],
         state_manager: "StateManager",
         plan: TaskPlan,
+        event_bus: "EventBus | None" = None,
     ) -> None:
         self.config = config
         self.agents = agents
         self.state_manager = state_manager
         self.plan = plan
+        self.event_bus = event_bus
 
         self._semaphore = asyncio.Semaphore(config.max_concurrent_agents)
         self._total_tokens_used = 0
@@ -63,6 +66,14 @@ class ExecutionEngine:
 
             logger.info("group_starting", group_index=group_index, sub_tasks=group)
             group_start = time.monotonic()
+
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.GROUP_START,
+                    group_index=group_index,
+                    data={"sub_tasks": group},
+                ))
 
             # Dispatch all agents in this group concurrently
             tasks = [self._execute_with_retry(sub_task_id) for sub_task_id in group]
@@ -89,6 +100,14 @@ class ExecutionEngine:
             elapsed_ms = int((time.monotonic() - group_start) * 1000)
             logger.info("group_done", group_index=group_index, elapsed_ms=elapsed_ms)
 
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.GROUP_COMPLETE,
+                    group_index=group_index,
+                    data={"elapsed_ms": elapsed_ms},
+                ))
+
         logger.info("engine_done", total_tokens=self._total_tokens_used)
 
     # ── Private ───────────────────────────────────────────────────────────────
@@ -113,6 +132,13 @@ class ExecutionEngine:
                     attempt=attempt,
                     backoff_s=backoff,
                 )
+                if self.event_bus:
+                    from hydra.events import EventType, HydraEvent
+                    await self.event_bus.emit(HydraEvent(
+                        type=EventType.AGENT_RETRY,
+                        sub_task_id=sub_task_id,
+                        data={"attempt": attempt, "last_error": last_error},
+                    ))
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)  # Cap at 30s
                 extra_context = f"Previous attempt failed: {last_error}\nPlease try a different approach."

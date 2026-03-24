@@ -16,11 +16,28 @@ from hydra.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
     from hydra.config import HydraConfig
+    from hydra.events import EventBus
     from hydra.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 
 _MAX_TOOL_ITERATIONS = 20  # Safety cap to prevent infinite tool-use loops
+
+
+
+class _DictToolCall:
+    """Lightweight wrapper that presents a dict-based tool call as an object."""
+
+    def __init__(self, data: dict) -> None:
+        self.id = data["id"]
+        self.type = data.get("type", "function")
+        self.function = _DictToolCallFunction(data["function"])
+
+
+class _DictToolCallFunction:
+    def __init__(self, data: dict) -> None:
+        self.name = data.get("name", "")
+        self.arguments = data.get("arguments", "")
 
 
 def _build_system_prompt(spec: AgentSpec, tool_schemas: list[dict]) -> str:
@@ -64,12 +81,14 @@ class Agent:
         tool_registry: ToolRegistry,
         state_manager: "StateManager",
         config: "HydraConfig",
+        event_bus: "EventBus | None" = None,
     ) -> None:
         self.agent_spec = agent_spec
         self.sub_task = sub_task
         self.tool_registry = tool_registry
         self.state_manager = state_manager
         self.config = config
+        self.event_bus = event_bus
 
         # Build tool schemas for this agent's assigned tools
         self.tool_schemas = tool_registry.get_schemas_for(agent_spec.tools_needed)
@@ -88,6 +107,15 @@ class Agent:
         """Execute the agent and return its output."""
         start_ms = int(time.monotonic() * 1000)
         self._log.info("agent_starting", role=self.agent_spec.role)
+
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.AGENT_START,
+                agent_id=self.agent_spec.agent_id,
+                sub_task_id=self.agent_spec.sub_task_id,
+                data={"role": self.agent_spec.role},
+            ))
 
         # 1. Inject upstream context
         upstream_context = await self.state_manager.get_upstream_context(
@@ -112,6 +140,16 @@ class Agent:
                 execution_time_ms=elapsed,
             )
             await self.state_manager.write_output(self.agent_spec.sub_task_id, output)
+
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.AGENT_ERROR,
+                    agent_id=self.agent_spec.agent_id,
+                    sub_task_id=self.agent_spec.sub_task_id,
+                    data={"error": str(exc)},
+                ))
+
             return output
 
         # 4. Parse output if schema is declared
@@ -137,6 +175,17 @@ class Agent:
             tokens_used=tokens_used,
             elapsed_ms=elapsed,
         )
+
+        if self.event_bus:
+            from hydra.events import EventType, HydraEvent
+            await self.event_bus.emit(HydraEvent(
+                type=EventType.AGENT_COMPLETE,
+                agent_id=self.agent_spec.agent_id,
+                sub_task_id=self.agent_spec.sub_task_id,
+                tokens=tokens_used,
+                data={"elapsed_ms": elapsed},
+            ))
+
         return output
 
     # ── Private helpers ───────────────────────────────────────────────────────
@@ -193,48 +242,137 @@ class Agent:
         for iteration in range(_MAX_TOOL_ITERATIONS):
             self._log.debug("llm_call", iteration=iteration, message_count=len(messages))
 
-            response = await litellm.acompletion(**call_kwargs)
+            if self.event_bus:
+                # ── Streaming path (event_bus exists) ────────────────────────
+                # Use stream=True to emit AGENT_TOKEN events for each chunk.
+                stream_kwargs = dict(call_kwargs)
+                stream_kwargs["stream"] = True
 
-            # Track token usage
-            if response.usage:
-                total_tokens += getattr(response.usage, "total_tokens", 0) or (
-                    getattr(response.usage, "prompt_tokens", 0)
-                    + getattr(response.usage, "completion_tokens", 0)
-                )
+                stream_response = await litellm.acompletion(**stream_kwargs)
 
-            choice = response.choices[0]
-            message = choice.message
+                # Collect streaming chunks
+                content_parts: list[str] = []
+                tool_calls_data: list[dict] = []
+                usage_info = None
 
-            # Track the last assistant text content for use if max iterations is hit
-            if message.content:
-                last_assistant_content = message.content
+                async for chunk in stream_response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta is None:
+                        continue
 
-            # Append the assistant message to history.
-            # Allow content=None (don't coerce to "") so the message accurately reflects
-            # the LLM response — some providers return None when only tool_calls are present.
-            messages.append({
-                "role": "assistant",
-                "content": message.content,  # May be None; that's valid per OpenAI spec
-                "tool_calls": getattr(message, "tool_calls", None),
-            })
+                    # Accumulate content and emit token events
+                    if delta.content:
+                        content_parts.append(delta.content)
+                        from hydra.events import EventType, HydraEvent
+                        await self.event_bus.emit(HydraEvent(
+                            type=EventType.AGENT_TOKEN,
+                            agent_id=self.agent_spec.agent_id,
+                            sub_task_id=self.agent_spec.sub_task_id,
+                            data={"token": delta.content},
+                        ))
 
-            # Check if any tool calls were requested
-            tool_calls = getattr(message, "tool_calls", None)
-            if not tool_calls:
-                # No more tool calls — this is the final answer
-                final_text = message.content or ""
-                self._log.debug("tool_loop_done", iterations=iteration + 1)
-                return final_text, total_tokens
+                    # Accumulate tool calls
+                    if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index if hasattr(tc_delta, "index") else 0
+                            while len(tool_calls_data) <= idx:
+                                tool_calls_data.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            if tc_delta.id:
+                                tool_calls_data[idx]["id"] += tc_delta.id or ""
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    tool_calls_data[idx]["function"]["name"] += tc_delta.function.name or ""
+                                if tc_delta.function.arguments:
+                                    tool_calls_data[idx]["function"]["arguments"] += tc_delta.function.arguments
 
-            # Execute each requested tool call
-            tool_results = await self._execute_tool_calls(tool_calls)
-            messages.extend(tool_results)
+                    # Capture usage from last chunk
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage_info = chunk.usage
+
+                # Track token usage
+                if usage_info:
+                    total_tokens += getattr(usage_info, "total_tokens", 0) or (
+                        getattr(usage_info, "prompt_tokens", 0)
+                        + getattr(usage_info, "completion_tokens", 0)
+                    )
+
+                assembled_content = "".join(content_parts) or None
+                if assembled_content:
+                    last_assistant_content = assembled_content
+
+                # Build tool_calls objects from accumulated data
+                assembled_tool_calls = None
+                if tool_calls_data:
+                    assembled_tool_calls = [_DictToolCall(tc) for tc in tool_calls_data if tc["function"]["name"]]
+
+                # Append the assistant message to history
+                messages.append({
+                    "role": "assistant",
+                    "content": assembled_content,
+                    "tool_calls": [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {"name": tc["function"]["name"], "arguments": tc["function"]["arguments"]},
+                        }
+                        for tc in tool_calls_data
+                        if tc["function"]["name"]
+                    ] or None,
+                })
+
+                if not assembled_tool_calls:
+                    # No more tool calls — this is the final answer
+                    final_text = assembled_content or ""
+                    self._log.debug("tool_loop_done", iterations=iteration + 1)
+                    return final_text, total_tokens
+
+                # Execute each requested tool call
+                tool_results = await self._execute_tool_calls(assembled_tool_calls)
+                messages.extend(tool_results)
+
+            else:
+                # ── Non-streaming path (no event_bus) ────────────────────────
+                # Use stream=False for simplicity — no token events needed.
+                raw_response = await litellm.acompletion(**call_kwargs)
+
+                msg = raw_response.choices[0].message if raw_response.choices else None
+                content = msg.content if msg else ""
+                tcs = getattr(msg, "tool_calls", None) if msg else None
+                usage = getattr(raw_response, "usage", None)
+                if usage:
+                    total_tokens += getattr(usage, "total_tokens", 0) or (
+                        getattr(usage, "prompt_tokens", 0) + getattr(usage, "completion_tokens", 0)
+                    )
+
+                if content:
+                    last_assistant_content = content
+
+                assembled_content = content or None
+                messages.append({
+                    "role": "assistant",
+                    "content": assembled_content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in (tcs or [])
+                    ] or None,
+                })
+
+                if not tcs:
+                    final_text = assembled_content or ""
+                    self._log.debug("tool_loop_done", iterations=iteration + 1)
+                    return final_text, total_tokens
+
+                tool_results = await self._execute_tool_calls(tcs)
+                messages.extend(tool_results)
 
             # Update the call kwargs messages reference
             call_kwargs["messages"] = messages
 
-        # Exceeded max iterations — return the last substantive assistant text,
-        # not messages[-1] which would be a tool result message.
+        # Exceeded max iterations — return the last substantive assistant text
         self._log.warning("max_tool_iterations_reached", max=_MAX_TOOL_ITERATIONS)
         return last_assistant_content or "Max tool iterations reached without final answer.", total_tokens
 
@@ -253,6 +391,15 @@ class Agent:
 
             self._log.info("tool_executing", tool=tool_name, args=list(kwargs.keys()))
 
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.AGENT_TOOL_CALL,
+                    agent_id=self.agent_spec.agent_id,
+                    sub_task_id=self.agent_spec.sub_task_id,
+                    data={"tool": tool_name, "args": list(kwargs.keys())},
+                ))
+
             tool = self.tool_registry.get(tool_name)
             if tool is None:
                 result = ToolResult(
@@ -267,6 +414,15 @@ class Agent:
                     result = ToolResult(success=False, error=f"Tool '{tool_name}' raised an exception: {exc}")
 
             self._log.debug("tool_result", tool=tool_name, success=result.success)
+
+            if self.event_bus:
+                from hydra.events import EventType, HydraEvent
+                await self.event_bus.emit(HydraEvent(
+                    type=EventType.AGENT_TOOL_RESULT,
+                    agent_id=self.agent_spec.agent_id,
+                    sub_task_id=self.agent_spec.sub_task_id,
+                    data={"tool": tool_name, "success": result.success, "error": result.error},
+                ))
 
             # Format as OpenAI/litellm tool result message
             content = json.dumps({"success": result.success, "data": result.data, "error": result.error})

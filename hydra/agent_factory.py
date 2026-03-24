@@ -4,6 +4,8 @@ Agent Factory — instantiates Agent objects from a TaskPlan.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
 
 from hydra.agent import Agent
@@ -11,6 +13,9 @@ from hydra.config import HydraConfig
 from hydra.models import AgentSpec, SubTask, TaskPlan
 from hydra.state_manager import StateManager
 from hydra.tool_registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from hydra.events import EventBus
 from hydra.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
 from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
 from hydra.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool, PdfReaderTool
@@ -34,10 +39,12 @@ class AgentFactory:
         config: HydraConfig,
         tool_registry: ToolRegistry,
         state_manager: StateManager,
+        event_bus: "EventBus | None" = None,
     ) -> None:
         self.config = config
         self.tool_registry = tool_registry
         self.state_manager = state_manager
+        self.event_bus = event_bus
 
     def create_agents(self, plan: TaskPlan) -> dict[str, Agent]:
         """
@@ -75,6 +82,7 @@ class AgentFactory:
                 tool_registry=per_agent_registry,
                 state_manager=self.state_manager,
                 config=self.config,
+                event_bus=self.event_bus,
             )
             agents[spec.sub_task_id] = agent
             logger.debug(

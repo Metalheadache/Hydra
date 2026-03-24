@@ -17,12 +17,14 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+from typing import AsyncGenerator, Callable
 
 import structlog
 
 from hydra.agent_factory import AgentFactory
 from hydra.brain import Brain
 from hydra.config import HydraConfig
+from hydra.events import EventBus, EventType, HydraEvent
 from hydra.execution_engine import ExecutionEngine
 from hydra.logger import configure_logging
 from hydra.post_brain import PostBrain
@@ -32,7 +34,7 @@ from hydra.tool_registry import ToolRegistry
 logger = structlog.get_logger(__name__)
 
 __version__ = "0.1.0"
-__all__ = ["Hydra", "HydraConfig"]
+__all__ = ["Hydra", "HydraConfig", "EventBus", "EventType", "HydraEvent"]
 
 
 class Hydra:
@@ -57,6 +59,10 @@ class Hydra:
         # Pass config so file tools are wired to the correct output_directory
         self.tool_registry = ToolRegistry()
         self.tool_registry.register_defaults(config=self.config)
+
+        # Storage for registered callbacks (event_type, callback) pairs.
+        # None as event_type = catch-all.
+        self._event_callbacks: list[tuple[EventType | None, Callable[[HydraEvent], None]]] = []
 
         logger.info(
             "hydra_initialized",
@@ -143,7 +149,115 @@ class Hydra:
         )
         return result
 
-    async def _run_pipeline(self, task: str, state_ref: list | None = None) -> dict:
+    # ── Callback hooks ────────────────────────────────────────────────────────
+
+    def on_agent_start(self, callback: Callable[[HydraEvent], None]) -> None:
+        """Register a callback fired when any agent starts."""
+        self._event_callbacks.append((EventType.AGENT_START, callback))
+
+    def on_agent_complete(self, callback: Callable[[HydraEvent], None]) -> None:
+        """Register a callback fired when any agent completes."""
+        self._event_callbacks.append((EventType.AGENT_COMPLETE, callback))
+
+    def on_tool_call(self, callback: Callable[[HydraEvent], None]) -> None:
+        """Register a callback fired on every tool call."""
+        self._event_callbacks.append((EventType.AGENT_TOOL_CALL, callback))
+
+    def on_event(self, callback: Callable[[HydraEvent], None]) -> None:
+        """Register a catch-all callback for all events."""
+        self._event_callbacks.append((None, callback))  # None = all events
+
+    # ── Streaming ─────────────────────────────────────────────────────────────
+
+    async def stream(self, task: str) -> AsyncGenerator[HydraEvent, None]:
+        """
+        Execute task and stream events as they happen.
+
+        Usage::
+
+            async for event in hydra.stream("My task"):
+                print(event.type, event.data)
+        """
+        event_bus = EventBus()
+        # Mark stream consumer before pipeline starts so close() sends the sentinel
+        # and all emitted events are enqueued from the start.
+        event_bus._has_stream_consumer = True
+
+        # Apply registered callbacks to this bus
+        self._wire_callbacks(event_bus)
+
+        # Start pipeline in background task
+        pipeline_task = asyncio.create_task(
+            self._run_pipeline_with_events(task, event_bus)
+        )
+
+        # Yield events as they arrive, with total timeout
+        try:
+            async with asyncio.timeout(self.config.total_task_timeout_seconds):
+                async for event in event_bus.stream():
+                    yield event
+                    if event.type in (EventType.PIPELINE_COMPLETE, EventType.PIPELINE_ERROR):
+                        break
+        except TimeoutError:
+            yield HydraEvent(
+                type=EventType.PIPELINE_ERROR,
+                data={"error": "Pipeline timed out"},
+            )
+        finally:
+            pipeline_task.cancel()
+            try:
+                await pipeline_task
+            except (asyncio.CancelledError, Exception) as exc:
+                if not isinstance(exc, asyncio.CancelledError):
+                    logger.error("stream_pipeline_exception", error=str(exc))
+
+    # ── Private ───────────────────────────────────────────────────────────────
+
+    def _wire_callbacks(self, event_bus: EventBus) -> None:
+        """Register stored callbacks on the given event_bus."""
+        for event_type, callback in self._event_callbacks:
+            if event_type is None:
+                # catch-all
+                event_bus.on(callback)
+            else:
+                # filtered wrapper
+                _type = event_type  # capture in closure
+
+                def _make_filtered(t: EventType, cb: Callable[[HydraEvent], None]):
+                    def _filtered(event: HydraEvent) -> None:
+                        if event.type == t:
+                            cb(event)
+                    return _filtered
+
+                event_bus.on(_make_filtered(_type, callback))
+
+    async def _run_pipeline_with_events(self, task: str, event_bus: EventBus) -> dict:
+        """Run the pipeline with events, emitting PIPELINE_START/COMPLETE/ERROR."""
+        await event_bus.emit(HydraEvent(
+            type=EventType.PIPELINE_START,
+            data={"task_preview": task[:100]},
+        ))
+
+        try:
+            result = await self._run_pipeline(task, event_bus=event_bus)
+            await event_bus.emit(HydraEvent(
+                type=EventType.PIPELINE_COMPLETE,
+                data={
+                    "warnings": len(result.get("warnings", [])),
+                    "files": len(result.get("files_generated", [])),
+                },
+            ))
+            await event_bus.close()
+            return result
+        except Exception as exc:
+            await event_bus.emit(HydraEvent(
+                type=EventType.PIPELINE_ERROR,
+                data={"error": str(exc)},
+            ))
+            await event_bus.close()
+            raise
+
+    async def _run_pipeline(self, task: str, state_ref: list | None = None, event_bus: EventBus | None = None) -> dict:
         """Internal pipeline: Brain → Factory → Engine → PostBrain."""
         # Fresh state for each run
         state = StateManager()
@@ -151,20 +265,25 @@ class Hydra:
         if state_ref is not None:
             state_ref.append(state)
 
+        # Wire registered callbacks if no event_bus provided (run() path)
+        if event_bus is None and self._event_callbacks:
+            event_bus = EventBus()
+            self._wire_callbacks(event_bus)
+
         # 1. Brain: decompose task → TaskPlan
-        brain = Brain(self.config, self.tool_registry)
+        brain = Brain(self.config, self.tool_registry, event_bus=event_bus)
         plan = await brain.plan(task)
 
         # 2. Factory: instantiate agents from plan
-        factory = AgentFactory(self.config, self.tool_registry, state)
+        factory = AgentFactory(self.config, self.tool_registry, state, event_bus=event_bus)
         agents = factory.create_agents(plan)
 
         # 3. Engine: execute DAG
-        engine = ExecutionEngine(self.config, agents, state, plan)
+        engine = ExecutionEngine(self.config, agents, state, plan, event_bus=event_bus)
         await engine.execute()
 
         # 4. Post-Brain: quality check + synthesize
-        post_brain = PostBrain(self.config, state, plan)
+        post_brain = PostBrain(self.config, state, plan, event_bus=event_bus)
         result = await post_brain.synthesize()
 
         # 5. Quality retry loop (single cycle, to prevent infinite loops)
