@@ -178,19 +178,21 @@ class EventBus:
         self._pending_confirmations[confirmation_id] = event
         self._confirmation_responses[confirmation_id] = False  # default: rejected
 
-        await self.emit(HydraEvent(
-            type=EventType.CONFIRMATION_REQUIRED,
-            data={
-                "confirmation_id": confirmation_id,
-                "tool_name": tool_name,
-                "args": args,
-            },
-        ))
+        try:
+            await self.emit(HydraEvent(
+                type=EventType.CONFIRMATION_REQUIRED,
+                data={
+                    "confirmation_id": confirmation_id,
+                    "tool_name": tool_name,
+                    "args": args,
+                },
+            ))
 
-        await event.wait()
-        result = self._confirmation_responses.pop(confirmation_id, False)
-        self._pending_confirmations.pop(confirmation_id, None)
-        return result
+            await event.wait()
+            return self._confirmation_responses.pop(confirmation_id, False)
+        finally:
+            self._pending_confirmations.pop(confirmation_id, None)
+            self._confirmation_responses.pop(confirmation_id, None)
 
     async def respond_to_confirmation(self, confirmation_id: str, approved: bool) -> None:
         """
@@ -198,6 +200,8 @@ class EventBus:
 
         If the confirmation_id is not found (already timed out), this is a no-op.
         """
+        if confirmation_id not in self._pending_confirmations:
+            return
         self._confirmation_responses[confirmation_id] = approved
         event = self._pending_confirmations.get(confirmation_id)
         if event is not None:

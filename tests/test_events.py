@@ -281,3 +281,66 @@ async def test_eventbus_listener_exception_does_not_propagate(bus: EventBus):
 
     assert crash_count == 1
     assert len(good_received) == 1  # Good listener still received it
+
+
+# ── Confirmation gate tests ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_request_confirmation_timeout_cleans_up_state():
+    """When request_confirmation times out, both dicts should be empty (no memory leak)."""
+    bus = EventBus()
+
+    # No responder — it will time out
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            bus.request_confirmation(
+                confirmation_id="test-id-1",
+                tool_name="dangerous_tool",
+                args={"key": "value"},
+            ),
+            timeout=0.01,
+        )
+
+    # Both dicts must be empty after timeout
+    assert "test-id-1" not in bus._pending_confirmations, "Memory leak: _pending_confirmations not cleaned up"
+    assert "test-id-1" not in bus._confirmation_responses, "Memory leak: _confirmation_responses not cleaned up"
+
+
+@pytest.mark.asyncio
+async def test_respond_to_confirmation_unknown_id_is_noop():
+    """respond_to_confirmation with an unknown ID should be a no-op (no state written)."""
+    bus = EventBus()
+    unknown_id = "non-existent-confirmation-id"
+
+    # Should not raise and should not write to _confirmation_responses
+    await bus.respond_to_confirmation(unknown_id, approved=True)
+
+    assert unknown_id not in bus._confirmation_responses
+    assert unknown_id not in bus._pending_confirmations
+
+
+@pytest.mark.asyncio
+async def test_request_confirmation_approval_flow():
+    """Normal approval flow should return True and clean up state."""
+    bus = EventBus()
+    conf_id = "approve-test"
+
+    async def _auto_approve():
+        await asyncio.sleep(0.01)
+        await bus.respond_to_confirmation(conf_id, approved=True)
+
+    asyncio.create_task(_auto_approve())
+
+    result = await asyncio.wait_for(
+        bus.request_confirmation(
+            confirmation_id=conf_id,
+            tool_name="some_tool",
+            args={},
+        ),
+        timeout=1.0,
+    )
+
+    assert result is True
+    # State should be cleaned up after successful confirmation
+    assert conf_id not in bus._pending_confirmations
+    assert conf_id not in bus._confirmation_responses

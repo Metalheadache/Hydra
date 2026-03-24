@@ -469,6 +469,14 @@ class Agent:
                             error="Tool execution rejected by user",
                         )
                         self._log.info("tool_rejected", tool=tool_name)
+                        if self.audit_logger:
+                            self.audit_logger.log_tool_execution(
+                                tool_name=tool_name,
+                                args=kwargs,
+                                result_success=False,
+                                duration_ms=0,
+                                agent_id=self.agent_spec.agent_id,
+                            )
                         if self.event_bus:
                             await self.event_bus.emit(HydraEvent(
                                 type=EventType.AGENT_TOOL_RESULT,

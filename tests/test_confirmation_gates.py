@@ -408,3 +408,55 @@ async def test_confirmation_required_event_emitted():
     assert conf_events[0].data["tool_name"] == "my_tool"
     assert conf_events[0].data["args"] == {"arg1": "val1"}
     assert conf_events[0].data["confirmation_id"] == "cid-3"
+
+
+@pytest.mark.asyncio
+async def test_rejected_confirmation_logged_to_audit():
+    """When a confirmation is rejected, audit_logger.log_tool_execution should be called with success=False."""
+    from hydra.state_manager import StateManager
+
+    class ConfirmationTool(BaseTool):
+        name = "confirm_tool"
+        description = "Requires confirmation"
+        parameters = {"type": "object", "properties": {}, "required": []}
+        requires_confirmation = True
+
+        async def execute(self) -> ToolResult:
+            return ToolResult(success=True, data={"done": True})
+
+    config = make_config()
+    spec = make_spec(tools=["confirm_tool"])
+    sub_task = make_sub_task()
+    sm = StateManager()
+    registry = ToolRegistry()
+    registry.register(ConfirmationTool())
+
+    # Mock audit_logger
+    audit_logger = MagicMock()
+
+    bus = EventBus()
+
+    # Auto-reject the confirmation
+    async def reject_immediately(event: HydraEvent):
+        if event.type == EventType.CONFIRMATION_REQUIRED:
+            cid = event.data["confirmation_id"]
+            await bus.respond_to_confirmation(cid, approved=False)
+
+    bus.on_async(reject_immediately)
+
+    first_response = make_streaming_response("", tool_calls_data=[{
+        "id": "call_1",
+        "function": {"name": "confirm_tool", "arguments": "{}"},
+    }])
+    second_response = make_streaming_response("Tool was rejected.")
+
+    agent = Agent(spec, sub_task, registry, sm, config, event_bus=bus, audit_logger=audit_logger)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=[first_response, second_response]):
+        await agent.execute()
+
+    # audit_logger.log_tool_execution must have been called with result_success=False
+    calls = audit_logger.log_tool_execution.call_args_list
+    assert len(calls) >= 1
+    rejection_calls = [c for c in calls if c.kwargs.get("result_success") is False or (c.args and c.args[2] is False)]
+    assert len(rejection_calls) >= 1, "Expected at least one log_tool_execution call with success=False"

@@ -97,9 +97,10 @@ class StateManager:
         if not isinstance(text, str) or not text:
             return "" if not isinstance(text, str) else text
         sanitized = text
-        # Remove system/user/assistant role markers (e.g. "system:", "User:")
+        # Remove system/user/assistant role markers only at the start of a line
+        # (e.g. "system:", "User:") — avoids false positives in mid-sentence text.
         sanitized = re.sub(
-            r'(?i)(system|user|assistant)\s*:',
+            r'(?im)^(system|user|assistant)\s*:',
             '[role_marker_removed]',
             sanitized,
         )

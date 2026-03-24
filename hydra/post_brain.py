@@ -416,6 +416,8 @@ class PostBrain:
 
         try:
             synth_start_ms = int(time.monotonic() * 1000)
+            synth_tokens_in = 0
+            synth_tokens_out = 0
             if self.event_bus:
                 # ── Streaming path (event_bus exists) ────────────────────────
                 stream_kwargs = dict(call_kwargs)
@@ -423,6 +425,7 @@ class PostBrain:
                 raw_response = await litellm.acompletion(**stream_kwargs)
 
                 content_parts: list[str] = []
+                usage_info = None
                 async for chunk in raw_response:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta and delta.content:
@@ -432,8 +435,17 @@ class PostBrain:
                             type=EventType.SYNTHESIS_TOKEN,
                             data={"token": delta.content},
                         ))
+                    # Capture usage from last chunk (some providers include it)
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage_info = chunk.usage
 
                 final_text = "".join(content_parts)
+                if usage_info:
+                    synth_tokens_in = getattr(usage_info, "prompt_tokens", 0) or 0
+                    synth_tokens_out = getattr(usage_info, "completion_tokens", 0) or 0
+                # Fallback estimate if provider did not supply usage
+                if synth_tokens_in == 0 and synth_tokens_out == 0:
+                    synth_tokens_out = len(final_text) // 4  # rough chars-per-token estimate
 
                 from hydra.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
@@ -444,13 +456,17 @@ class PostBrain:
                 # ── Non-streaming path (no event_bus) ────────────────────────
                 raw_response = await litellm.acompletion(**call_kwargs)
                 final_text = (raw_response.choices[0].message.content or "") if raw_response.choices else ""
+                usage = getattr(raw_response, "usage", None)
+                if usage:
+                    synth_tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+                    synth_tokens_out = getattr(usage, "completion_tokens", 0) or 0
 
             synth_duration_ms = int(time.monotonic() * 1000) - synth_start_ms
             if self.audit_logger:
                 self.audit_logger.log_llm_call(
                     model=self.config.post_brain_model,
-                    tokens_in=0,
-                    tokens_out=0,
+                    tokens_in=synth_tokens_in,
+                    tokens_out=synth_tokens_out,
                     duration_ms=synth_duration_ms,
                     agent_id="post_brain_synthesis",
                 )
