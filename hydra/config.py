@@ -58,6 +58,18 @@ class HydraConfig(BaseSettings):
     search_api_key: str = Field(default="", description="API key for web search (Brave/Tavily/SerpAPI).")
     search_backend: str = Field(default="brave", description="Search backend: brave | tavily | serpapi")
 
+    # ── Server Auth ───────────────────────────────────────────────────────────
+    server_token: str = Field(
+        default="",
+        description="Optional API token for server auth. When set, all /api/* routes require X-API-Key header or ?token= query param. Env: HYDRA_SERVER_TOKEN.",
+    )
+
+    # ── CORS ──────────────────────────────────────────────────────────────────
+    cors_origins: str = Field(
+        default="*",
+        description="Comma-separated list of allowed CORS origins (e.g. 'http://localhost:3000,https://myapp.com'). Use '*' to allow all. Env: HYDRA_CORS_ORIGINS.",
+    )
+
     model_config = SettingsConfigDict(
         env_prefix="HYDRA_",
         env_file=".env",

@@ -175,20 +175,24 @@ class Hydra:
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 
-    async def stream(self, task: str, files: list[str] | None = None) -> AsyncGenerator[HydraEvent, None]:
+    async def stream(self, task: str, files: list[str] | None = None, event_bus: EventBus | None = None) -> AsyncGenerator[HydraEvent, None]:
         """
         Execute task and stream events as they happen.
 
         Args:
             task: Natural language description of the task to accomplish.
             files: Optional list of file paths to attach for agent processing.
+            event_bus: Optional EventBus to use. If provided, the caller owns the bus
+                and can register listeners (e.g. audit) before calling stream().
+                If None (default), a new EventBus is created internally.
 
         Usage::
 
             async for event in hydra.stream("My task"):
                 print(event.type, event.data)
         """
-        event_bus = EventBus()
+        if event_bus is None:
+            event_bus = EventBus()
         # Mark stream consumer before pipeline starts so close() sends the sentinel
         # and all emitted events are enqueued from the start.
         event_bus._has_stream_consumer = True
@@ -198,7 +202,7 @@ class Hydra:
 
         # Start pipeline in background task
         pipeline_task = asyncio.create_task(
-            self._run_pipeline_with_events(task, event_bus, files=files)
+            self._run_pipeline_with_events(task, event_bus, files=files)  # type: ignore[arg-type]
         )
 
         # Yield events as they arrive, with total timeout
