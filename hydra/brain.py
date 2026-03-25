@@ -105,9 +105,19 @@ class Brain:
                     from hydra.events import EventType, HydraEvent
                     await self.event_bus.emit(HydraEvent(
                         type=EventType.BRAIN_COMPLETE,
+                        # H5: include plan structure so frontend can build agent cards
                         data={
                             "sub_tasks": len(plan.sub_tasks),
                             "groups": len(plan.execution_groups),
+                            "execution_groups": plan.execution_groups,
+                            "agent_specs": [
+                                {
+                                    "agent_id": s.agent_id,
+                                    "sub_task_id": s.sub_task_id,
+                                    "role": s.role,
+                                }
+                                for s in plan.agent_specs
+                            ],
                         },
                     ))
 

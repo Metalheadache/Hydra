@@ -158,8 +158,8 @@ class WebFetchTool(BaseTool):
     timeout_seconds = 20
 
     async def execute(self, url: str, max_chars: int = _MAX_FETCH_CHARS) -> ToolResult:
-        # SSRF prevention
-        if _is_ssrf_target(url):
+        # SSRF prevention (async DNS resolution — non-blocking)
+        if await _is_ssrf_target_async(url):
             return ToolResult(
                 success=False,
                 error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",
@@ -217,7 +217,11 @@ class WebFetchTool(BaseTool):
 # ── HttpRequestTool ───────────────────────────────────────────────────────────
 
 def _is_ssrf_target(url: str) -> bool:
-    """Return True if the URL resolves to a private/loopback address (SSRF prevention)."""
+    """Return True if the URL resolves to a private/loopback address (SSRF prevention).
+
+    Sync version — use _is_ssrf_target_async() from async contexts to avoid
+    blocking the event loop during DNS resolution.
+    """
     import socket
     try:
         parsed = httpx.URL(url)
@@ -239,6 +243,49 @@ def _is_ssrf_target(url: str) -> bool:
 
     try:
         resolved_ips = socket.getaddrinfo(bare_host, None)
+        for family, _, _, _, sockaddr in resolved_ips:
+            ip_str = sockaddr[0]
+            try:
+                addr = ipaddress.ip_address(ip_str)
+                if any(addr in net for net in _BLOCKED_NETWORKS):
+                    return True
+            except ValueError:
+                pass
+    except Exception:
+        pass  # DNS failure — let the request proceed and fail naturally
+
+    return False
+
+
+async def _is_ssrf_target_async(url: str) -> bool:
+    """Async version of _is_ssrf_target — uses loop.getaddrinfo() for non-blocking DNS.
+
+    Use this from async callers (execute() methods) to avoid blocking the event loop.
+    Falls back to the sync version for non-DNS checks (literal IPs, blocked hostnames).
+    """
+    import asyncio
+
+    try:
+        parsed = httpx.URL(url)
+        host = parsed.host
+    except Exception:
+        return False
+
+    if host.lower() in _BLOCKED_HOSTNAMES:
+        return True
+
+    # Strip IPv6 brackets
+    bare_host = host.strip("[]")
+
+    try:
+        addr = ipaddress.ip_address(bare_host)
+        return any(addr in net for net in _BLOCKED_NETWORKS)
+    except ValueError:
+        pass  # not a literal IP — proceed to async DNS resolution
+
+    try:
+        loop = asyncio.get_event_loop()
+        resolved_ips = await loop.getaddrinfo(bare_host, None)
         for family, _, _, _, sockaddr in resolved_ips:
             ip_str = sockaddr[0]
             try:
@@ -304,8 +351,8 @@ class HttpRequestTool(BaseTool):
         if not url.startswith(("http://", "https://")):
             return ToolResult(success=False, error="URL must start with http:// or https://")
 
-        # SSRF prevention
-        if _is_ssrf_target(url):
+        # SSRF prevention (async DNS resolution — non-blocking)
+        if await _is_ssrf_target_async(url):
             return ToolResult(
                 success=False,
                 error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",

@@ -295,7 +295,7 @@ export default function ResultView({
     }}>
       {/* Header */}
       <div style={{
-        padding: '14px 20px',
+        padding: '14px 20px 14px 140px',
         display: 'flex', alignItems: 'center', gap: 12,
         background: isDark ? 'rgba(5,7,10,0.85)' : 'rgba(240,244,248,0.85)',
         backdropFilter: 'blur(20px)',

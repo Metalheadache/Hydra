@@ -177,6 +177,10 @@ if _FRONTEND_DIST.exists():
     _assets = _FRONTEND_DIST / "assets"
     if _assets.exists():
         app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
+    # Mount fonts
+    _fonts = _FRONTEND_DIST / "fonts"
+    if _fonts.exists():
+        app.mount("/fonts", StaticFiles(directory=str(_fonts)), name="fonts")
 
 
 @app.get("/", include_in_schema=False)
@@ -367,6 +371,21 @@ async def run_task(body: dict) -> dict:
 
 # ── History ───────────────────────────────────────────────────────────────────
 
+@app.get("/api/files/{filename:path}", dependencies=[Depends(verify_token)])
+async def download_file(filename: str) -> Any:
+    """
+    Download a generated file from the output directory.
+    Path traversal is blocked — only files within output_directory are served.
+    """
+    output_dir = Path(_config.output_directory).resolve()
+    filepath = (output_dir / filename).resolve()
+    if not filepath.is_relative_to(output_dir):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(filepath), filename=filepath.name)
+
+
 @app.get("/api/history", dependencies=[Depends(verify_token)])
 async def list_history(
     limit: int = Query(20, ge=1, le=200),
@@ -454,7 +473,7 @@ async def ws_task(websocket: WebSocket) -> None:
         # Register audit log listener
         async def _audit_listener(event: HydraEvent) -> None:
             try:
-                audit.log(str(event.type), event.model_dump())
+                await audit.log_async(str(event.type), event.model_dump())
             except Exception:
                 pass
 

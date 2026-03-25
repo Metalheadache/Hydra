@@ -634,3 +634,142 @@ async def test_auth_token_skipped(client: AsyncClient):
     # Random token provided — should still succeed (auth not enforced)
     resp = await client.get("/api/config", headers={"X-API-Key": "any-token"})
     assert resp.status_code == 200
+
+
+# ─── File Download Endpoint Tests ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_download_file_valid(client: AsyncClient, tmp_path):
+    """GET /api/files/{filename} returns the file for valid files in output dir."""
+    # Create a file in the output directory
+    output_dir = Path(server_module._config.output_directory)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    test_file = output_dir / "report.txt"
+    test_file.write_text("hello world")
+
+    resp = await client.get("/api/files/report.txt")
+    assert resp.status_code == 200
+    assert b"hello world" in resp.content
+
+
+@pytest.mark.asyncio
+async def test_download_file_not_found(client: AsyncClient):
+    """GET /api/files/{filename} returns 404 for missing files."""
+    resp = await client.get("/api/files/nonexistent.txt")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_download_file_path_traversal_blocked(client: AsyncClient, tmp_path):
+    """GET /api/files/{filename} with path traversal returns 403."""
+    # Attempt to escape the output directory
+    resp = await client.get("/api/files/../../../etc/passwd")
+    assert resp.status_code in (403, 404)  # 403=blocked, 404=normalised by FastAPI
+
+
+# ─── PIPELINE_COMPLETE Full Result Test ───────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_pipeline_complete_contains_full_result():
+    """PIPELINE_COMPLETE event should contain the full result dict, not just counts."""
+    from hydra import Hydra
+    from hydra.config import HydraConfig
+    from hydra.events import EventBus, EventType, HydraEvent
+
+    full_result = {
+        "output": "Test output",
+        "warnings": [],
+        "execution_summary": {"total_tokens": 100},
+        "files_generated": ["report.txt"],
+        "per_agent_quality": {},
+        "agents_needing_retry": [],
+        "retry_metadata": {"retried_agents": [], "retry_performed": False},
+    }
+
+    hydra = Hydra(config=HydraConfig())
+
+    with patch.object(hydra, "_run_pipeline", AsyncMock(return_value=full_result)):
+        events_received = []
+        async for event in hydra.stream("test task"):
+            events_received.append(event)
+
+    complete_events = [e for e in events_received if e.type == EventType.PIPELINE_COMPLETE]
+    assert len(complete_events) == 1
+    data = complete_events[0].data
+    assert isinstance(data, dict)
+    # Must contain full result fields (not just counts)
+    assert "output" in data
+    assert "execution_summary" in data
+    assert data["output"] == "Test output"
+
+
+# ─── agent_complete Event Fields Test ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_agent_complete_event_has_full_fields():
+    """agent_complete event data must include output, status, tokens_used, execution_time_ms."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from hydra.agent import Agent
+    from hydra.config import HydraConfig
+    from hydra.events import EventBus, EventType
+    from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask
+    from hydra.state_manager import StateManager
+    from hydra.tool_registry import ToolRegistry
+
+    spec = AgentSpec(
+        agent_id="agent-1",
+        sub_task_id="task-1",
+        role="Researcher",
+        goal="Research something",
+        backstory="Expert researcher",
+        tools_needed=[],
+    )
+    from hydra.models import Priority
+    sub_task = SubTask(
+        id="task-1",
+        description="Research topic X",
+        expected_output="Summary",
+        dependencies=[],
+        priority=Priority.NORMAL,
+    )
+
+    config = HydraConfig()
+    registry = ToolRegistry()
+    state = StateManager()
+    bus = EventBus()
+
+    agent = Agent(
+        agent_spec=spec,
+        sub_task=sub_task,
+        tool_registry=registry,
+        state_manager=state,
+        config=config,
+        event_bus=bus,
+    )
+
+    complete_events = []
+    bus.on(lambda e: complete_events.append(e) if e.type == EventType.AGENT_COMPLETE else None)
+
+    expected_output = AgentOutput(
+        agent_id="agent-1",
+        sub_task_id="task-1",
+        status=AgentStatus.COMPLETED,
+        output="done",
+        tokens_used=42,
+        execution_time_ms=123,
+        quality_score=None,
+    )
+
+    with patch.object(agent, "_run_tool_loop", AsyncMock(return_value=("done", 42))):
+        with patch.object(state, "write_output", AsyncMock()):
+            with patch.object(state, "write_shared", AsyncMock()):
+                with patch.object(state, "get_upstream_context", AsyncMock(return_value="")):
+                    await agent.execute()
+
+    assert len(complete_events) >= 1
+    event = complete_events[-1]
+    data = event.data or {}
+    assert "status" in data, f"Missing 'status' in agent_complete data: {data}"
+    assert "tokens_used" in data, f"Missing 'tokens_used' in agent_complete data: {data}"
+    assert "execution_time_ms" in data, f"Missing 'execution_time_ms' in agent_complete data: {data}"

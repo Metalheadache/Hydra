@@ -614,6 +614,8 @@ export default function App() {
   // Refs
   const settingsPanelRef = useRef(null);
   const settingsBtnRef = useRef(null);
+  const historyPanelRef = useRef(null);
+  const historyBtnRef = useRef(null);
   const mockAbortRef = useRef(false);
 
   // WebSocket
@@ -661,13 +663,17 @@ export default function App() {
     return () => document.getElementById('hydra-styles')?.remove();
   }, []);
 
-  // Click outside to close settings
+  // Click outside to close settings or history
   useEffect(() => {
     const handler = (e) => {
       if (
         settingsPanelRef.current && !settingsPanelRef.current.contains(e.target) &&
         settingsBtnRef.current && !settingsBtnRef.current.contains(e.target)
       ) setSettingsOpen(false);
+      if (
+        historyPanelRef.current && !historyPanelRef.current.contains(e.target) &&
+        historyBtnRef.current && !historyBtnRef.current.contains(e.target)
+      ) setHistoryOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -724,15 +730,16 @@ export default function App() {
     } else {
       // Real WebSocket mode
       const filePaths = uploadedFiles.map(f => f.filepath || f);
+      // H1: Map frontend camelCase names to backend snake_case field names.
+      // temperature is per-agent (set by Brain), not a top-level config — excluded (M6).
       const configOverrides = {
         api_key: settings.apiKey || undefined,
         default_model: settings.model || undefined,
         brain_model: settings.brainModel || undefined,
         max_concurrent_agents: settings.maxConcurrentAgents,
-        per_agent_timeout: settings.perAgentTimeout,
-        total_task_timeout: settings.totalTaskTimeout,
-        temperature: settings.temperature,
-        quality_score_threshold: settings.qualityScoreThreshold,
+        per_agent_timeout_seconds: settings.perAgentTimeout,
+        total_task_timeout_seconds: settings.totalTaskTimeout,
+        min_quality_score: settings.qualityScoreThreshold,
         output_directory: settings.outputDirectory,
       };
       // Remove undefined values
@@ -924,32 +931,33 @@ export default function App() {
         </div>
 
         {/* History */}
-        <button
-          onClick={() => setHistoryOpen(p => !p)}
-          onMouseEnter={() => setHoveredHistoryBtn(true)}
-          onMouseLeave={() => setHoveredHistoryBtn(false)}
-          aria-label="Task History"
-          style={navBtnStyle(historyOpen, hoveredHistoryBtn)}
-        >
-          <ClockIcon size={18} />
-        </button>
+        <div>
+          <button
+            ref={historyBtnRef}
+            onClick={e => { e.stopPropagation(); setHistoryOpen(p => !p); }}
+            onMouseEnter={() => setHoveredHistoryBtn(true)}
+            onMouseLeave={() => setHoveredHistoryBtn(false)}
+            aria-label="Task History"
+            style={navBtnStyle(historyOpen, hoveredHistoryBtn)}
+          >
+            <ClockIcon size={18} />
+          </button>
+          <div ref={historyPanelRef} style={{ position: 'relative' }}>
+            {historyOpen && (
+              <HistoryPage
+                isDark={isDark}
+                apiBaseUrl={settings.apiBaseUrl}
+                serverToken={settings.serverToken}
+                onClose={() => setHistoryOpen(false)}
+                onOpenResult={handleOpenHistoryResult}
+                isDropdown={true}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── Right nav: New Chat (or nothing during ORCHESTRATING) ── */}
-      {(appState === 'RESULT') && (
-        <button
-          onMouseEnter={() => setHoveredNewChat(true)}
-          onMouseLeave={() => setHoveredNewChat(false)}
-          onClick={handleNewTask}
-          aria-label="New Task"
-          style={{
-            position: 'fixed', top: 24, right: 24, zIndex: 1001,
-            ...navBtnStyle(false, hoveredNewChat),
-          }}
-        >
-          <NewChatIcon size={20} />
-        </button>
-      )}
+      {/* ── Right nav: New Task (IDLE only — ResultView has its own buttons) ── */}
 
       {/* ── Morph overlay ── */}
       <MorphOverlay morphRect={morphRect} morphPhase={morphPhase} morphText={morphText} t={t} />
@@ -979,13 +987,6 @@ export default function App() {
               letterSpacing: '0.04em', lineHeight: 1,
               textShadow: '0 0 40px rgba(0,37,201,0.4)',
             }}>HYDRA</div>
-            <div style={{
-              fontSize: 14, color: t.textSecondary, marginTop: 8,
-              opacity: inputFocused ? 0 : 0.7,
-              transition: 'opacity 0.3s ease',
-            }}>
-              Multi-Agent Task Orchestrator
-            </div>
           </div>
 
           {/* Input bar */}
@@ -1087,16 +1088,7 @@ export default function App() {
         />
       )}
 
-      {/* ── HISTORY OVERLAY ── */}
-      {historyOpen && (
-        <HistoryPage
-          isDark={isDark}
-          apiBaseUrl={settings.apiBaseUrl}
-          serverToken={settings.serverToken}
-          onClose={() => setHistoryOpen(false)}
-          onOpenResult={handleOpenHistoryResult}
-        />
-      )}
+      {/* History is now a dropdown panel next to the History button */}
     </div>
   );
 }

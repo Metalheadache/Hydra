@@ -122,8 +122,8 @@ class RunPythonTool(BaseTool):
                 )
 
             # Collect any files created (excluding the script itself)
-            files_created = [
-                str(p.relative_to(tmp_dir))
+            created_files = [
+                p.name
                 for p in Path(tmp_dir).iterdir()
                 if p.name != "script.py" and p.is_file()
             ]
@@ -132,11 +132,23 @@ class RunPythonTool(BaseTool):
             stdout_text = stdout.decode("utf-8", errors="replace")
             stderr_text = stderr.decode("utf-8", errors="replace")
 
+            # H4: Copy created files to output_directory before temp dir is cleaned up
+            import os as _os
+            output_dir = Path(_os.environ.get("HYDRA_OUTPUT_DIRECTORY", "./hydra_output"))
+            output_dir.mkdir(parents=True, exist_ok=True)
+            created_files_paths: list[str] = []
+            for fname in created_files:
+                src = Path(tmp_dir) / fname
+                if src.exists():
+                    dest = output_dir / fname
+                    shutil.copy2(str(src), str(dest))
+                    created_files_paths.append(str(dest))
+
             logger.info(
                 "python_executed",
                 exit_code=exit_code,
                 stdout_len=len(stdout_text),
-                files_created=files_created,
+                files_created=created_files_paths,
             )
 
             return ToolResult(
@@ -145,7 +157,7 @@ class RunPythonTool(BaseTool):
                     "stdout": stdout_text,
                     "stderr": stderr_text,
                     "exit_code": exit_code,
-                    "files_created": files_created,
+                    "files_created": created_files_paths,
                 },
                 error=None if exit_code == 0 else f"Python exited with code {exit_code}:\n{stderr_text}",
             )
@@ -223,11 +235,15 @@ class RunShellTool(BaseTool):
             )
 
         try:
+            # M3: Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
+            import os as _os
+            safe_cwd = _os.environ.get("HYDRA_OUTPUT_DIRECTORY", "/tmp")
             # Use create_subprocess_exec (not shell=True) to avoid shell interpretation
             proc = await asyncio.create_subprocess_exec(
                 *tokens,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=safe_cwd,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)

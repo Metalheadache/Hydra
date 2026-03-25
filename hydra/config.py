@@ -40,6 +40,9 @@ class HydraConfig(BaseSettings):
     total_task_timeout_seconds: int = Field(default=300, description="Total timeout for the entire task pipeline.")
     total_token_budget: int = Field(default=100_000, description="Abort if total token usage exceeds this budget.")
 
+    # ── Tool Loop ─────────────────────────────────────────────────────────────
+    max_tool_iterations: int = Field(default=20, description="Safety cap on LLM tool-use loop iterations per agent.")
+
     # ── Retry ─────────────────────────────────────────────────────────────────
     default_max_retries: int = Field(default=2, description="Default max retries for failed agents.")
     retry_backoff_base: float = Field(default=1.0, description="Base delay (seconds) for exponential backoff.")

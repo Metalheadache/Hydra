@@ -39,7 +39,7 @@ class AuditLogger:
     # ── Core writer ───────────────────────────────────────────────────────────
 
     def log(self, event_type: str, data: dict[str, Any]) -> None:
-        """Append a flat JSON-Lines entry to the audit log."""
+        """Append a flat JSON-Lines entry to the audit log (sync, thread-safe)."""
         entry = {
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "event_type": event_type,
@@ -48,6 +48,15 @@ class AuditLogger:
         with self._write_lock:
             with open(self.log_path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, default=str) + "\n")
+
+    async def log_async(self, event_type: str, data: dict[str, Any]) -> None:
+        """Async wrapper for log() — safe to call from async contexts.
+
+        Uses asyncio.to_thread() so the blocking file write doesn't block
+        the event loop.
+        """
+        import asyncio
+        await asyncio.to_thread(self.log, event_type, data)
 
     # ── Convenience helpers ───────────────────────────────────────────────────
 

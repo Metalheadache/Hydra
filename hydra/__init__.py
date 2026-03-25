@@ -258,10 +258,7 @@ class Hydra:
             result = await self._run_pipeline(task, event_bus=event_bus, files=files)
             await event_bus.emit(HydraEvent(
                 type=EventType.PIPELINE_COMPLETE,
-                data={
-                    "warnings": len(result.get("warnings", [])),
-                    "files": len(result.get("files_generated", [])),
-                },
+                data=result,  # full result dict — frontend reads event.data for output/warnings/etc
             ))
             await event_bus.close()
             return result

@@ -7,6 +7,7 @@ Uses aiosqlite for async I/O to avoid blocking the event loop.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,7 @@ class HistoryDB:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     async def init(self) -> None:
         """Create tables if they don't exist (idempotent)."""
@@ -56,7 +58,11 @@ class HistoryDB:
         self._initialized = True
 
     async def _ensure_init(self) -> None:
-        if not self._initialized:
+        if self._initialized:
+            return
+        async with self._init_lock:
+            if self._initialized:
+                return  # double-check after acquiring lock
             await self.init()
 
     async def save_run(

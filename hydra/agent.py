@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-_MAX_TOOL_ITERATIONS = 20  # Safety cap to prevent infinite tool-use loops
+_MAX_TOOL_ITERATIONS = 20  # Default safety cap — overridden by config.max_tool_iterations
 
 
 
@@ -188,7 +188,15 @@ class Agent:
                 agent_id=self.agent_spec.agent_id,
                 sub_task_id=self.agent_spec.sub_task_id,
                 tokens=tokens_used,
-                data={"elapsed_ms": elapsed},
+                # H5: include full output info for frontend token counting and display
+                data={
+                    "elapsed_ms": elapsed,
+                    "output": str(output.output)[:500] if output.output else "",
+                    "status": output.status.value,
+                    "tokens_used": output.tokens_used,
+                    "execution_time_ms": output.execution_time_ms,
+                    "quality_score": output.quality_score,
+                },
             ))
 
         return output
@@ -244,7 +252,8 @@ class Agent:
 
         last_assistant_content: str = ""  # Track last assistant text response separately
 
-        for iteration in range(_MAX_TOOL_ITERATIONS):
+        max_iterations = getattr(self.config, "max_tool_iterations", _MAX_TOOL_ITERATIONS)
+        for iteration in range(max_iterations):
             self._log.debug("llm_call", iteration=iteration, message_count=len(messages))
 
             if self.event_bus:
@@ -406,7 +415,7 @@ class Agent:
             call_kwargs["messages"] = messages
 
         # Exceeded max iterations — return the last substantive assistant text
-        self._log.warning("max_tool_iterations_reached", max=_MAX_TOOL_ITERATIONS)
+        self._log.warning("max_tool_iterations_reached", max=max_iterations)
         return last_assistant_content or "Max tool iterations reached without final answer.", total_tokens
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[dict]:
@@ -430,7 +439,9 @@ class Agent:
                     type=EventType.AGENT_TOOL_CALL,
                     agent_id=self.agent_spec.agent_id,
                     sub_task_id=self.agent_spec.sub_task_id,
-                    data={"tool": tool_name, "args": list(kwargs.keys())},
+                    # H5: include both 'tool' and 'tool_name' (frontend reads both);
+                    # args as full dict (not just keys) for confirmation modal display
+                    data={"tool": tool_name, "tool_name": tool_name, "args": kwargs},
                 ))
 
             tool = self.tool_registry.get(tool_name)

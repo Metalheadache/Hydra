@@ -101,6 +101,7 @@ export default function HistoryPage({
   serverToken,
   onClose,
   onOpenResult,
+  isDropdown = false,
 }) {
   const t = tokens(isDark);
   const [runs, setRuns] = useState([]);
@@ -152,6 +153,90 @@ export default function HistoryPage({
     }
   }, [apiBaseUrl, serverToken]);
 
+  if (isDropdown) {
+    return (
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: 'absolute',
+          top: 'calc(100% + 12px)',
+          left: 0,
+          width: 380,
+          maxHeight: '70vh',
+          borderRadius: 20,
+          background: t.panelBg,
+          border: `1px solid ${t.panelBorder}`,
+          backdropFilter: 'blur(40px)',
+          WebkitBackdropFilter: 'blur(40px)',
+          boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 20px 60px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.08)',
+          opacity: 1,
+          transform: 'translateY(0) scale(1)',
+          transformOrigin: 'top left',
+          transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+          zIndex: 2000,
+        }}
+      >
+        {/* Dropdown header */}
+        <div style={{
+          padding: '14px 16px',
+          borderBottom: `1px solid ${t.cardBorder}`,
+          display: 'flex', alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Task History</div>
+            <div style={{ fontSize: 11, color: t.textSecondary, marginTop: 1 }}>
+              {runs.length} recent runs
+            </div>
+          </div>
+        </div>
+
+        {/* Dropdown content */}
+        <div style={{
+          flex: 1, overflowY: 'auto',
+          padding: '10px 12px',
+          scrollbarWidth: 'thin',
+        }}>
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '20px', color: t.textSecondary, fontSize: 13 }}>
+              ⏳ Loading...
+            </div>
+          )}
+          {error && !loading && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
+              color: '#ef4444', fontSize: 12, marginBottom: 8,
+            }}>
+              ⚠️ {error}
+            </div>
+          )}
+          {!loading && !error && runs.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '30px 16px', color: t.textSecondary }}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>📭</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>No history yet</div>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {runs.map(run => (
+              <HistoryCard
+                key={run.task_id}
+                run={run}
+                onOpen={() => handleOpen(run)}
+                onDelete={() => handleDelete(run.task_id)}
+                isDark={isDark}
+                isLoading={loadingId === run.task_id}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Full overlay mode (fallback)
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 2000,

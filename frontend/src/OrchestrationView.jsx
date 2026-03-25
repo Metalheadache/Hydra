@@ -748,12 +748,13 @@ export default function OrchestrationView({
     }
   }, [events]); // processEvent via ref — no stale closure issue (Issue #4)
 
-  // Issue #5: flush token buffer every 200ms (reduces 50 updates/sec → 5/sec)
+  // M1: flush token buffer every 200ms — only update tokenPreview for display.
+  // Token counting (tokensUsed, totalTokens) is authoritative from agent_complete events only.
   useEffect(() => {
     const interval = setInterval(() => {
       const buf = tokenBufferRef.current;
       const agentIds = Object.keys(buf).filter(k => k !== '__total');
-      if (agentIds.length === 0 && !buf.__total) return;
+      if (agentIds.length === 0) return;
 
       if (agentIds.length > 0) {
         setAgentMap(prev => {
@@ -764,7 +765,8 @@ export default function OrchestrationView({
             const agent = prev[agentId] || {};
             next[agentId] = {
               ...agent,
-              tokensUsed: (agent.tokensUsed || 0) + entry.tokens_n,
+              // Only update tokenPreview — do NOT accumulate tokensUsed here
+              // (authoritative count comes from agent_complete event)
               tokenPreview: entry.latestPreview,
             };
           }
@@ -772,10 +774,7 @@ export default function OrchestrationView({
         });
       }
 
-      if (buf.__total) {
-        setTotalTokens(prev => prev + buf.__total);
-      }
-
+      // Do NOT accumulate __total from streaming tokens — only agent_complete counts
       // Clear the buffer after flush
       tokenBufferRef.current = {};
     }, 200);
@@ -799,7 +798,7 @@ export default function OrchestrationView({
     }}>
       {/* Task header */}
       <div style={{
-        padding: '16px 24px',
+        padding: '16px 24px 16px 140px',
         display: 'flex', alignItems: 'center', gap: 12,
         background: isDark ? 'rgba(5,7,10,0.85)' : 'rgba(240,244,248,0.85)',
         backdropFilter: 'blur(20px)',
