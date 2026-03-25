@@ -14,32 +14,37 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🤖 **Dynamic Agents** — Each agent gets a tailored role, goal, backstory, and tool set — generated at runtime, not pre-built
 - ⚡ **Hybrid DAG Execution** — Independent tasks run in parallel; dependent tasks wait automatically
 - 📡 **Real-time Streaming** — Token-by-token LLM output, tool call visibility, and full pipeline progress via `hydra.stream()`
+- 🖥️ **Web UI** — Glassmorphism chat interface with live orchestration view, agent cards, quality scores, and result export
 - 🔄 **Retry + Quality Gate** — Failed agents retry with exponential backoff; LLM quality scoring (1-10) with automatic re-dispatch
-- 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
-- 🔧 **22 Built-in Tools** — Document generation, research, data analysis, code execution, memory, validation
-- 🔒 **Security Hardened** — Shell command whitelisting, SSRF prevention, path traversal protection, sandboxed execution
+- 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
+- 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
+- 🔧 **22 Built-in Tools** — Document generation, research, data analysis, code execution, memory, translation, validation
+- 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval before executing
+- 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
+- 🌐 **FastAPI Backend** — REST + WebSocket API with task history, file upload, optional auth token
 
 ---
 
 ## Quick Start
 
-### Install
+### Option 1: Web UI (recommended)
 
 ```bash
-# From source
 git clone https://github.com/Metalheadache/Hydra.git
 cd Hydra
 pip install -e ".[dev]"
+
+# Build frontend
+cd frontend && npm install && npx vite build && cd ..
+
+# Start server
+python -m hydra
+# → Open http://localhost:8000
 ```
 
-### Configure
+Configure your LLM provider in the Settings panel (gear icon), then type a task and watch the agents work.
 
-```bash
-cp .env.example .env
-# Edit .env with your API key and preferred model
-```
-
-### Run
+### Option 2: Python API
 
 ```python
 import asyncio
@@ -57,7 +62,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Stream (Real-time)
+### Option 3: Streaming API
 
 ```python
 async def main():
@@ -78,16 +83,109 @@ async def main():
 asyncio.run(main())
 ```
 
-### Callbacks
+### Option 4: With File Attachments
+
+```python
+result = await hydra.run(
+    "Summarize these reports and compare findings",
+    files=["report.pdf", "data.xlsx", "notes.md"]
+)
+```
+
+### Option 5: Callbacks
 
 ```python
 hydra = Hydra()
 hydra.on_agent_start(lambda e: print(f"🤖 {e.agent_id} started"))
 hydra.on_agent_complete(lambda e: print(f"✅ {e.agent_id} done"))
-hydra.on_tool_call(lambda e: print(f"🔧 {e.data['tool']}({e.data.get('args', {})})"))
-hydra.on_event(lambda e: None)  # catch-all
+hydra.on_tool_call(lambda e: print(f"🔧 {e.data['tool']}"))
 
 result = await hydra.run("Write a market analysis")
+```
+
+---
+
+## Web UI
+
+The built-in web interface provides a real-time view of the multi-agent pipeline:
+
+```
+┌─────────────────────────────────────────────────┐
+│  Task: "Analyze the AI market..."    [⏹ Cancel] │
+├─────────────────────────────────────────────────┤
+│  🧠 Brain: 4 sub-tasks, 2 groups               │
+│                                                  │
+│  ⚡ Group 1 — Parallel                           │
+│  ┌──────────────┐ ┌──────────────┐              │
+│  │ 🔍 Researcher│ │ 📊 Analyst   │              │
+│  │ ████████░░   │ │ ██████████ ✅│              │
+│  │ 🔧 web_search│ │ Score: 8/10  │              │
+│  └──────────────┘ └──────────────┘              │
+│                                                  │
+│  ⚡ Group 2 — Waiting...                         │
+│  ┌──────────────┐                                │
+│  │ ✍️ Writer     │                                │
+│  │ ⏳ Pending    │                                │
+│  └──────────────┘                                │
+│                                                  │
+│  📝 Synthesis: streaming output...               │
+├─────────────────────────────────────────────────┤
+│  ⏱ 45s | 🪙 12,450 tokens | 💰 ~$0.03          │
+└─────────────────────────────────────────────────┘
+```
+
+**Features:**
+- Live agent cards with status, tool calls, token preview, quality scores
+- Streaming synthesis output token-by-token
+- Result view with markdown rendering, agent breakdown, file downloads, export
+- Task history with search and re-run
+- Human-in-the-loop confirmation modals
+- Dark/light mode with glassmorphism design
+- Works without backend (mock mode for demo)
+
+---
+
+## API Server
+
+Hydra includes a FastAPI backend for web deployment:
+
+```bash
+python -m hydra --host 0.0.0.0 --port 8000
+```
+
+### REST Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Serve web UI |
+| `GET` | `/api/config` | Current config (API key redacted) |
+| `POST` | `/api/config` | Update config at runtime |
+| `GET` | `/api/tools` | List all 22 registered tools |
+| `GET` | `/api/models` | Suggested model list |
+| `POST` | `/api/upload` | Upload files for processing |
+| `POST` | `/api/task` | Run task (REST, non-streaming) |
+| `GET` | `/api/history` | List past task runs |
+| `GET` | `/api/history/{id}` | Full result for a past run |
+| `DELETE` | `/api/history/{id}` | Delete a history entry |
+
+### WebSocket
+
+`WS /ws/task` — Real-time streaming endpoint
+
+```json
+// Client sends (auth optional)
+{"type": "auth", "token": "your-server-token"}
+{"type": "start_task", "task": "...", "files": ["upload_id"]}
+
+// Server streams HydraEvents
+{"type": "brain_start", "timestamp": 1234567890}
+{"type": "agent_start", "agent_id": "agent_abc", "data": {"role": "Researcher"}}
+{"type": "agent_token", "agent_id": "agent_abc", "data": "The market"}
+{"type": "pipeline_complete", "data": {"output": "...", "files_generated": [...]}}
+
+// Client can send during execution
+{"type": "confirmation_response", "confirmation_id": "conf_123", "approved": true}
+{"type": "cancel"}
 ```
 
 ---
@@ -98,7 +196,7 @@ All settings use the `HYDRA_` environment variable prefix:
 
 | Variable | Default | Description |
 |---|---|---|
-| `HYDRA_API_KEY` | `""` | Provider API key |
+| `HYDRA_API_KEY` | `""` | LLM provider API key |
 | `HYDRA_DEFAULT_MODEL` | `anthropic/claude-sonnet-4-6` | Default model (litellm format) |
 | `HYDRA_BRAIN_MODEL` | `anthropic/claude-sonnet-4-6` | Model for task planning |
 | `HYDRA_POST_BRAIN_MODEL` | `anthropic/claude-sonnet-4-6` | Model for synthesis |
@@ -108,11 +206,11 @@ All settings use the `HYDRA_` environment variable prefix:
 | `HYDRA_TOTAL_TASK_TIMEOUT_SECONDS` | `300` | Total pipeline timeout |
 | `HYDRA_TOTAL_TOKEN_BUDGET` | `100000` | Token budget (abort if exceeded) |
 | `HYDRA_OUTPUT_DIRECTORY` | `./hydra_output` | File output directory |
+| `HYDRA_MIN_QUALITY_SCORE` | `5.0` | Minimum score before retry |
+| `HYDRA_SERVER_TOKEN` | `""` | Optional API auth token |
+| `HYDRA_CORS_ORIGINS` | `*` | CORS allowed origins |
 | `HYDRA_SEARCH_BACKEND` | `brave` | Web search provider |
 | `HYDRA_SEARCH_API_KEY` | `""` | Search API key |
-| `HYDRA_MIN_QUALITY_SCORE` | `5.0` | Minimum quality score (1-10) before retry |
-| `HYDRA_MAX_TOKENS_BRAIN` | `4096` | Max tokens for Brain planning |
-| `HYDRA_MAX_TOKENS_SYNTHESIS` | `8192` | Max tokens for synthesis |
 
 ### Provider Examples
 
@@ -124,6 +222,11 @@ HYDRA_DEFAULT_MODEL=anthropic/claude-sonnet-4-6
 # OpenAI
 HYDRA_API_KEY=sk-...
 HYDRA_DEFAULT_MODEL=gpt-4o
+
+# DeepSeek
+HYDRA_API_KEY=sk-...
+HYDRA_DEFAULT_MODEL=deepseek/deepseek-chat
+HYDRA_BRAIN_MODEL=deepseek/deepseek-reasoner  # R1 for planning
 
 # Ollama (local, free)
 HYDRA_API_BASE=http://localhost:11434
@@ -137,12 +240,6 @@ HYDRA_DEFAULT_MODEL=azure/gpt-4o
 # Google Gemini
 HYDRA_API_KEY=<gemini-key>
 HYDRA_DEFAULT_MODEL=gemini/gemini-2.5-flash
-
-# DeepSeek
-HYDRA_API_KEY=sk-...
-HYDRA_DEFAULT_MODEL=deepseek/deepseek-chat
-HYDRA_BRAIN_MODEL=deepseek/deepseek-reasoner  # R1 for planning
-HYDRA_POST_BRAIN_MODEL=deepseek/deepseek-chat
 ```
 
 ---
@@ -150,7 +247,7 @@ HYDRA_POST_BRAIN_MODEL=deepseek/deepseek-chat
 ## Architecture
 
 ```
-User Task
+User Task + Files
     │
     ▼
 ┌─────────┐
@@ -181,7 +278,7 @@ User Task
 
 ### How Context Flows
 
-Upstream agent outputs are automatically injected into downstream agent prompts:
+Upstream agent outputs are automatically injected into downstream agent prompts with sanitization:
 
 ```
 Agent A (Research)  → StateManager → Agent C (Analysis)
@@ -190,7 +287,7 @@ Agent B (Data)      → StateManager ↗
                                 Agent D (Report Writer)
 ```
 
-Token budgeting ensures injected context doesn't overflow the model's context window. Long outputs are automatically truncated with references to the full version in shared memory.
+Token budgeting prevents context overflow. Long outputs are truncated with references to full versions in shared memory. Output sanitization strips prompt injection patterns before injection.
 
 ---
 
@@ -229,7 +326,7 @@ Token budgeting ensures injected context doesn't overflow the model's context wi
 ### 💻 Code Execution
 | Tool | Description |
 |---|---|
-| `run_python` | Sandboxed Python execution (temp directory) |
+| `run_python` | Python execution (temp dir, credential-stripped env, requires confirmation) |
 | `run_shell` | Whitelisted shell commands only |
 
 ### 🗂️ Memory
@@ -241,8 +338,8 @@ Token budgeting ensures injected context doesn't overflow the model's context wi
 ### 🌐 Language
 | Tool | Description |
 |---|---|
-| `translate` | LLM-powered translation (any language pair) |
-| `summarize` | Summarize text (bullets/paragraph/executive) |
+| `translate` | LLM-powered translation (any language pair, 16K tokens) |
+| `summarize` | Summarize text (bullets/paragraph/executive, 8K tokens) |
 
 ### ✅ Validation
 | Tool | Description |
@@ -254,28 +351,31 @@ Token budgeting ensures injected context doesn't overflow the model's context wi
 
 ## Streaming Events
 
-When using `hydra.stream()`, you receive real-time events for every pipeline stage:
+When using `hydra.stream()` or the WebSocket endpoint, you receive real-time events:
 
 | Event Type | When | Data |
 |---|---|---|
 | `pipeline_start` | Pipeline begins | Task description |
 | `brain_start` | Brain planning begins | — |
-| `brain_complete` | Plan ready | Number of sub-tasks, groups |
+| `brain_complete` | Plan ready | Sub-task count, groups |
 | `group_start` | Parallel group begins | Group index, agent IDs |
 | `agent_start` | Agent begins execution | Agent ID, role |
 | `agent_token` | LLM generates a token | Token text |
 | `agent_tool_call` | Agent calls a tool | Tool name, arguments |
 | `agent_tool_result` | Tool returns | Success/error, data |
-| `agent_complete` | Agent finishes | Output summary, tokens used |
+| `agent_complete` | Agent finishes | Output, tokens used |
 | `agent_error` | Agent failed | Error message |
-| `agent_retry` | Agent retrying | Attempt number, error |
-| `group_complete` | All agents in group done | Results summary |
+| `agent_retry` | Agent retrying | Attempt number |
+| `group_complete` | All agents in group done | Results |
 | `quality_start` | Quality scoring begins | — |
 | `quality_score` | Per-agent score | Score (1-10), feedback |
-| `quality_retry` | Low-score agent re-running | Agent ID, score |
+| `quality_retry` | Low-score agent re-running | Agent ID |
 | `synthesis_start` | Final synthesis begins | — |
 | `synthesis_token` | Synthesis LLM token | Token text |
 | `synthesis_complete` | Final output ready | Output, files |
+| `file_processed` | Uploaded file processed | File info |
+| `confirmation_required` | Tool needs approval | Tool name, args |
+| `confirmation_response` | User approved/rejected | Result |
 | `pipeline_complete` | Everything done | Full result |
 | `pipeline_error` | Pipeline failed | Error details |
 
@@ -286,28 +386,35 @@ When using `hydra.stream()`, you receive real-time events for every pipeline sta
 Hydra runs LLM-generated code and tool calls. Here's what's protected and what's not:
 
 **What's hardened:**
-- **Shell execution**: Whitelist-only (`ls`, `cat`, `head`, `wc`, `grep`, `find`, `jq`). Metacharacters blocked. Uses `subprocess_exec` (no shell interpretation). Won't cover every use case — if your agents need `curl` or `tar`, you'll need to extend the whitelist and accept the risk.
-- **Path traversal**: File tools validate paths with `Path.is_relative_to()`. PDF reader has `allowed_dirs` restriction.
-- **HTTP tools**: Private IPs blocked (RFC 1918, link-local, loopback). Redirects disabled. Standard SSRF prevention — not bulletproof against DNS rebinding.
+- **Shell execution**: Whitelist-only (`ls`, `cat`, `head`, `wc`, `grep`, `find`, `jq`). Metacharacters blocked. Uses `subprocess_exec` (no shell interpretation).
+- **Python execution**: Runs in temp directory. Cloud credentials stripped from env (`AWS_*`, `OPENAI_API_KEY`, etc.). Requires user confirmation by default.
+- **Path traversal**: All file tools validate paths with `Path.is_relative_to()`. PDF reader has `allowed_dirs` restriction.
+- **SSRF prevention**: Private IPs blocked (RFC 1918, link-local, loopback, AWS metadata). Redirects disabled. DNS resolution checked.
+- **Prompt injection**: Upstream agent outputs sanitized — role markers, XML injection tags, `[INST]`/`<<SYS>>` patterns stripped. Context wrapped in XML delimiters.
+- **API auth**: Optional `HYDRA_SERVER_TOKEN` for all endpoints. WebSocket auth via first message (not query params).
+- **File upload**: Size limits, file count limits, null byte rejection, chunked reads.
+- **Audit logging**: Every LLM call, tool execution, and state mutation logged as JSON Lines with thread-safe writes.
 - **Tool isolation**: Stateful tools get per-agent instances. No shared mutable state between concurrent runs.
 
-**What's NOT sandboxed:**
-- **Python execution**: Runs in a temp directory but has **full network access and filesystem read**. LLM-generated code can `import socket`, read `/etc/passwd`, or call home. For real isolation, wrap Hydra in Docker with `--network none` and volume restrictions. We don't pretend otherwise.
-- **LLM prompt injection**: Upstream agent outputs are injected into downstream prompts. A compromised agent could craft output that manipulates downstream agents. XML delimiters help but aren't a guarantee.
+**What's NOT sandboxed (be honest with yourself):**
+- **Python execution**: Has full network access and filesystem read. For real isolation, wrap Hydra in Docker with `--network none`. We don't pretend otherwise.
+- **LLM prompt injection**: Defense-in-depth sanitization helps but isn't a guarantee against sophisticated attacks.
 
-**For production deployment**, run Hydra inside a container with restricted network and filesystem access. The framework provides defense-in-depth at the application layer, but OS-level isolation is your responsibility.
+**For production deployment**, run Hydra inside a container with restricted network and filesystem access.
 
 ---
 
-## Examples
+## File Upload
 
-```bash
-# Simple research task
-python examples/simple_research.py
+Hydra extracts text from 30+ file formats for agent context:
 
-# Full report generation pipeline
-python examples/report_generation.py
-```
+**Documents:** `.pdf`, `.docx`, `.xlsx`, `.pptx`
+**Text:** `.txt`, `.md`, `.csv`, `.json`, `.yaml`, `.xml`, `.html`, `.log`, `.ini`, `.toml`
+**Code:** `.py`, `.js`, `.ts`, `.java`, `.cpp`, `.c`, `.go`, `.rs`, `.rb`, `.php`, `.swift`, `.kt`
+
+- Max 20 files per task, 50MB per file
+- 50K character extraction limit per file (truncated with marker)
+- Unsupported formats: filepath available for agents to reference directly
 
 ---
 
@@ -316,7 +423,7 @@ python examples/report_generation.py
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-# 133 tests covering core pipeline, security, streaming, events
+# 287 tests covering core pipeline, security, streaming, events, server, history
 ```
 
 ---
@@ -337,6 +444,7 @@ class MyTool(BaseTool):
         },
         "required": ["input"],
     }
+    requires_confirmation = False  # Set True for human-in-the-loop
 
     async def execute(self, input: str) -> ToolResult:
         try:
@@ -354,13 +462,12 @@ hydra.tool_registry.register(MyTool())
 
 ## Roadmap
 
-- [ ] FastAPI + browser-based chat frontend
+- [ ] PyInstaller standalone executable (download → double-click → done)
 - [ ] PyPI package (`pip install hydra-agents`)
-- [ ] PyInstaller standalone executable
-- [ ] `py.typed` marker for IDE type checking
+- [ ] Settings: test connection, brain strategy selector, cost estimation
 - [ ] MCP (Model Context Protocol) tool integration
 - [ ] Vector store / RAG tool
-- [ ] Webhook triggers for automated workflows
+- [ ] Docker deployment with `--network none` sandboxing
 
 ---
 
