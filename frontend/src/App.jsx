@@ -1,24 +1,19 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'; // Fix 2: import useMemo
-
-// ─── Mock streaming ──────────────────────────────────────────────────────────
-const MOCK_RESPONSES = [
-  "I'm Hydra, your multi-agent task orchestrator. I'll decompose your request into parallel sub-tasks and synthesize the results. What would you like me to work on?",
-  "Great task! I'm spinning up multiple specialized agents to tackle this in parallel. Each agent will focus on a specific aspect, and I'll synthesize their outputs into a coherent result for you.",
-  "I've analyzed your request and identified 3 parallel work streams. The Brain model is decomposing the task now. You can expect a comprehensive, multi-perspective response shortly.",
-  "Interesting challenge! My agent swarm is on it. I'll coordinate their efforts and ensure quality scoring meets the threshold before delivering the final synthesis.",
-];
-
-async function* mockStream(text) {
-  const words = text.split(' ');
-  for (const word of words) {
-    await new Promise(r => setTimeout(r, 50 + Math.random() * 80));
-    yield word + ' ';
-  }
-}
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import OrchestrationView from './OrchestrationView.jsx';
+import ResultView from './ResultView.jsx';
+import HistoryPage from './HistoryPage.jsx';
+import { mockOrchestration } from './mockOrchestration.js';
+import { useWebSocket, uploadFiles, fetchHistory, fetchHistoryRun } from './useWebSocket.js';
+import {
+  tokens,
+  GearIcon, ClockIcon, PaperclipIcon, SendIcon, StopIcon,
+  EyeIcon, EyeOffIcon, XIcon, SunIcon, MoonIcon, NewChatIcon,
+} from './tokens.jsx';
 
 // ─── Default settings ────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
   apiBaseUrl: '',
+  serverToken: '',
   apiKey: '',
   model: 'anthropic/claude-sonnet-4-6',
   brainModel: 'anthropic/claude-sonnet-4-6',
@@ -36,111 +31,10 @@ const MODEL_OPTIONS = [
   'deepseek/deepseek-chat',
   'deepseek/deepseek-reasoner',
   'ollama/llama3',
+  'gemini/gemini-2.5-flash',
 ];
 
-// ─── Color tokens ─────────────────────────────────────────────────────────────
-const tokens = (isDark) => ({
-  bgColor: isDark ? '#05070a' : '#f0f4f8',
-  bgGradient: isDark
-    ? 'radial-gradient(circle at 20% 20%, rgba(0,37,201,0.1) 0%, transparent 40%), radial-gradient(circle at 80% 80%, rgba(74,109,229,0.06) 0%, transparent 40%)'
-    : 'radial-gradient(circle at 15% 20%, rgba(0,37,201,0.15) 0%, transparent 45%), radial-gradient(circle at 85% 75%, rgba(26,71,255,0.1) 0%, transparent 40%), radial-gradient(circle at 50% 50%, rgba(255,255,255,0.5) 0%, transparent 70%)',
-  glassBgBase: isDark
-    ? 'linear-gradient(180deg, rgba(200,220,255,0.05) 0%, rgba(255,255,255,0.02) 100%)'
-    : 'linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.4) 100%)',
-  glassBgFocus: isDark
-    ? 'linear-gradient(180deg, rgba(160,210,255,0.08) 0%, rgba(255,255,255,0.04) 100%)'
-    : 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%)',
-  glassBorder: isDark ? 'rgba(192,192,192,0.2)' : 'rgba(255,255,255,0.6)',
-  glassBorderFocus: 'rgba(160,230,255,0.6)',
-  glassHighlight: 'inset 0 1px 1px rgba(255,255,255,0.1)', // Fix 10: used in InputBar container
-  glassShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)',
-  neonGlow: '0 0 20px rgba(0,37,201,0.35), inset 0 0 5px rgba(255,255,255,0.05)', // Fix 10: used in Send button
-  textPrimary: isDark ? '#f0f2f5' : '#0f172a',
-  textSecondary: isDark ? '#94a3b8' : '#64748b',
-  accentPrimary: '#0025C9',
-  accentHover: '#4a6de5',
-  panelBg: isDark ? 'rgba(15,20,25,0.85)' : 'rgba(255,255,255,0.7)',
-  panelBorder: isDark ? 'rgba(192,192,192,0.15)' : 'rgba(255,255,255,0.8)',
-  settingsBg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)',
-  settingsBorder: isDark ? 'rgba(192,192,192,0.2)' : 'rgba(255,255,255,0.6)',
-  userBubbleBg: isDark ? 'rgba(0,37,201,0.15)' : 'rgba(0,37,201,0.1)',
-  userBubbleBorder: isDark ? 'rgba(0,37,201,0.3)' : 'rgba(0,37,201,0.2)',
-  assistantBubbleBg: isDark
-    ? 'linear-gradient(180deg, rgba(200,220,255,0.05) 0%, rgba(255,255,255,0.02) 100%)'
-    : 'linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0.4) 100%)',
-  inputBg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)',
-  sliderTrack: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-  divider: isDark
-    ? 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 100%)'
-    : 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0) 100%)',
-});
-
-// ─── Inline SVG Icons ─────────────────────────────────────────────────────────
-const GearIcon = ({ size = 20, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
-
-const PaperclipIcon = ({ size = 18, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-  </svg>
-);
-
-const SendIcon = ({ size = 18, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13" />
-    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-  </svg>
-);
-
-const StopIcon = ({ size = 18, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-  </svg>
-);
-
-const EyeIcon = ({ size = 16, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
-const EyeOffIcon = ({ size = 16, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-    <line x1="1" y1="1" x2="23" y2="23" />
-  </svg>
-);
-
-const XIcon = ({ size = 12, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
-const SunIcon = ({ size = 16, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="5" />
-    <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-    <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-  </svg>
-);
-
-// Fix 11: MoonIcon for dark mode toggle
-const MoonIcon = ({ size = 20, color = 'currentColor' }) => (
-  <svg viewBox="0 0 24 24" width={size} height={size} stroke={color} strokeWidth="1.5" fill="none">
-    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-  </svg>
-);
-
-// ─── Slider component ──────────────────────────────────────────────────────────
+// ─── GlassSlider ──────────────────────────────────────────────────────────────
 const GlassSlider = ({ value, onChange, min, max, step, label, displayValue, t }) => {
   const pct = ((value - min) / (max - min)) * 100;
   return (
@@ -166,7 +60,6 @@ const GlassSlider = ({ value, onChange, min, max, step, label, displayValue, t }
             width: '100%', height: '100%', opacity: 0, cursor: 'pointer', margin: 0, padding: 0,
           }}
         />
-        {/* Thumb visual */}
         <div style={{
           position: 'absolute', top: '50%', left: `${pct}%`,
           transform: 'translate(-50%, -50%)',
@@ -181,15 +74,19 @@ const GlassSlider = ({ value, onChange, min, max, step, label, displayValue, t }
   );
 };
 
-// ─── Settings Panel ────────────────────────────────────────────────────────────
+// ─── SettingsPanel ────────────────────────────────────────────────────────────
 const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, t }) => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelInputFocused, setModelInputFocused] = useState(false);
   const [brainModelInputFocused, setBrainModelInputFocused] = useState(false);
-  // Fix 8: React state for dark toggle hover
   const [hoveredDarkToggle, setHoveredDarkToggle] = useState(false);
+  const [apiUrlFocused, setApiUrlFocused] = useState(false);
+  const [apiKeyFocused, setApiKeyFocused] = useState(false);
+  const [serverTokenFocused, setServerTokenFocused] = useState(false);
+  const [outputDirFocused, setOutputDirFocused] = useState(false);
+  const [showServerToken, setShowServerToken] = useState(false);
 
-  const inputStyle = (focused) => ({
+  const inputStyle = () => ({
     width: '100%', background: 'transparent', border: 'none', outline: 'none',
     color: t.textPrimary, fontSize: 13, fontFamily: 'inherit',
   });
@@ -213,14 +110,9 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
   };
 
   const sectionStyle = {
-    marginBottom: 16,
-    paddingBottom: 16,
+    marginBottom: 16, paddingBottom: 16,
     borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
   };
-
-  const [apiUrlFocused, setApiUrlFocused] = useState(false);
-  const [apiKeyFocused, setApiKeyFocused] = useState(false);
-  const [outputDirFocused, setOutputDirFocused] = useState(false);
 
   return (
     <div style={{
@@ -241,7 +133,6 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
       scrollbarWidth: 'none',
       zIndex: 999,
     }}>
-      {/* Header */}
       <div style={{ marginBottom: 16 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.3px' }}>Hydra Settings</span>
       </div>
@@ -254,15 +145,32 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         <div style={fieldWrapStyle(apiUrlFocused)}>
           <input
             type="text" value={settings.apiBaseUrl}
-            placeholder="https://api.example.com/v1"
+            placeholder="http://localhost:8000"
             onChange={e => onSettingChange('apiBaseUrl', e.target.value)}
             onFocus={() => setApiUrlFocused(true)}
             onBlur={() => setApiUrlFocused(false)}
-            style={inputStyle(apiUrlFocused)}
+            style={inputStyle()}
           />
         </div>
 
-        <label style={labelStyle}>API Key</label>
+        <label style={labelStyle}>Server Token (optional)</label>
+        <div style={fieldWrapStyle(serverTokenFocused)}>
+          <input
+            type={showServerToken ? 'text' : 'password'}
+            value={settings.serverToken}
+            placeholder="HYDRA_SERVER_TOKEN value"
+            onChange={e => onSettingChange('serverToken', e.target.value)}
+            onFocus={() => setServerTokenFocused(true)}
+            onBlur={() => setServerTokenFocused(false)}
+            style={{ ...inputStyle(), flex: 1 }}
+          />
+          <button onClick={() => setShowServerToken(p => !p)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0 }}>
+            {showServerToken ? <EyeOffIcon size={16} color={t.textSecondary} /> : <EyeIcon size={16} color={t.textSecondary} />}
+          </button>
+        </div>
+
+        <label style={labelStyle}>LLM API Key</label>
         <div style={fieldWrapStyle(apiKeyFocused)}>
           <input
             type={showApiKey ? 'text' : 'password'}
@@ -271,7 +179,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             onChange={e => onSettingChange('apiKey', e.target.value)}
             onFocus={() => setApiKeyFocused(true)}
             onBlur={() => setApiKeyFocused(false)}
-            style={{ ...inputStyle(apiKeyFocused), flex: 1 }}
+            style={{ ...inputStyle(), flex: 1 }}
           />
           <button onClick={() => setShowApiKey(p => !p)}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0 }}>
@@ -291,7 +199,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             onChange={e => onSettingChange('model', e.target.value)}
             onFocus={() => setModelInputFocused(true)}
             onBlur={() => setModelInputFocused(false)}
-            style={inputStyle(modelInputFocused)}
+            style={inputStyle()}
           />
           <datalist id="model-options">
             {MODEL_OPTIONS.map(m => <option key={m} value={m} />)}
@@ -305,7 +213,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             onChange={e => onSettingChange('brainModel', e.target.value)}
             onFocus={() => setBrainModelInputFocused(true)}
             onBlur={() => setBrainModelInputFocused(false)}
-            style={inputStyle(brainModelInputFocused)}
+            style={inputStyle()}
           />
           <datalist id="brain-model-options">
             {MODEL_OPTIONS.map(m => <option key={m} value={m} />)}
@@ -346,16 +254,14 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             onChange={e => onSettingChange('outputDirectory', e.target.value)}
             onFocus={() => setOutputDirFocused(true)}
             onBlur={() => setOutputDirFocused(false)}
-            style={inputStyle(outputDirFocused)}
+            style={inputStyle()}
           />
         </div>
       </div>
 
-      {/* Fix 8: Dark Mode Toggle — button with role="switch", React hover state, no inline DOM mutation */}
-      {/* Fix 11: Toggle MoonIcon / SunIcon based on isDark */}
+      {/* Dark mode */}
       <button
-        role="switch"
-        aria-checked={isDark}
+        role="switch" aria-checked={isDark}
         onClick={onToggleDark}
         onMouseEnter={() => setHoveredDarkToggle(true)}
         onMouseLeave={() => setHoveredDarkToggle(false)}
@@ -371,18 +277,13 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
           transition: 'all 0.3s ease',
         }}
       >
-        {isDark
-          ? <MoonIcon size={16} color={t.textSecondary} />
-          : <SunIcon size={16} color={t.textSecondary} />
-        }
+        {isDark ? <MoonIcon size={16} color={t.textSecondary} /> : <SunIcon size={16} color={t.textSecondary} />}
         <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: t.textPrimary, textAlign: 'left' }}>Dark Mode</span>
-        {/* Toggle pill */}
         <div style={{
           width: 44, height: 24, borderRadius: 12, position: 'relative',
           background: isDark ? 'rgba(0,37,201,0.25)' : 'rgba(0,0,0,0.12)',
           border: `1px solid ${isDark ? '#0025C9' : 'rgba(0,0,0,0.12)'}`,
-          transition: 'all 0.3s ease',
-          flexShrink: 0,
+          transition: 'all 0.3s ease', flexShrink: 0,
         }}>
           <div style={{
             position: 'absolute', top: 3,
@@ -398,7 +299,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
   );
 };
 
-// ─── File chip ─────────────────────────────────────────────────────────────────
+// ─── FileChip ─────────────────────────────────────────────────────────────────
 const FileChip = ({ file, onRemove, t }) => {
   const isError = !!file.error;
   const isDone = !isError && file.progress >= 100;
@@ -408,16 +309,11 @@ const FileChip = ({ file, onRemove, t }) => {
       <div style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '4px 10px 4px 8px', borderRadius: 8,
-        background: 'rgba(239,68,68,0.08)',
-        border: '1px solid rgba(239,68,68,0.3)',
-        fontSize: 12, color: '#ef4444',
-        maxWidth: 280, flexShrink: 0,
+        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+        fontSize: 12, color: '#ef4444', maxWidth: 280, flexShrink: 0,
       }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.error}</span>
-        <button onClick={onRemove} style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: '#ef4444', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0,
-        }}>
+        <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0 }}>
           <XIcon size={11} color="#ef4444" />
         </button>
       </div>
@@ -428,136 +324,54 @@ const FileChip = ({ file, onRemove, t }) => {
     <div style={{
       display: 'inline-flex', flexDirection: 'column', gap: 3,
       padding: '4px 10px 4px 8px', borderRadius: 10,
-      background: t.glassBgBase,
-      backdropFilter: 'blur(10px)',
+      background: t.glassBgBase, backdropFilter: 'blur(10px)',
       border: `1px solid ${isDone ? 'rgba(74,222,128,0.3)' : t.glassBorder}`,
-      fontSize: 12, color: t.textSecondary,
-      maxWidth: 180, flexShrink: 0,
+      fontSize: 12, color: t.textSecondary, maxWidth: 180, flexShrink: 0,
       transition: 'border-color 0.3s ease',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <PaperclipIcon size={11} color={isDone ? '#4ade80' : t.textSecondary} />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{file.name}</span>
-        <button onClick={onRemove} style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0, marginLeft: 'auto',
-        }}>
+        <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0, flexShrink: 0, marginLeft: 'auto' }}>
           <XIcon size={11} color={t.textSecondary} />
         </button>
       </div>
-      {/* Progress bar */}
-      <div style={{
-        height: 2, borderRadius: 1,
-        background: 'rgba(255,255,255,0.08)',
-        overflow: 'hidden',
-        opacity: isDone ? 0 : 1,
-        transition: 'opacity 0.5s ease 0.3s',
-      }}>
-        <div style={{
-          height: '100%',
-          width: `${file.progress ?? 0}%`,
-          background: 'linear-gradient(90deg, #4a6de5, #0025C9)',
-          borderRadius: 1,
-          transition: 'width 0.1s ease',
-          boxShadow: '0 0 6px rgba(0,37,201,0.5)',
-        }} />
+      <div style={{ height: 2, borderRadius: 1, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', opacity: isDone ? 0 : 1, transition: 'opacity 0.5s ease 0.3s' }}>
+        <div style={{ height: '100%', width: `${file.progress ?? 0}%`, background: 'linear-gradient(90deg, #4a6de5, #0025C9)', borderRadius: 1, transition: 'width 0.1s ease', boxShadow: '0 0 6px rgba(0,37,201,0.5)' }} />
       </div>
     </div>
   );
 };
 
-// ─── Message Bubble ────────────────────────────────────────────────────────────
-const MessageBubble = ({ msg, isStreaming, t, idx }) => {
-  const isUser = msg.role === 'user';
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), idx * 50);
-    return () => clearTimeout(timer);
-  }, [idx]);
-
-  return (
-    <div style={{
-      display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
-      marginBottom: 12, padding: '0 8px',
-      opacity: visible ? 1 : 0,
-      transform: visible ? 'translateY(0)' : 'translateY(16px)',
-      transition: 'opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1)',
-    }}>
-      <div style={{
-        maxWidth: 'clamp(240px, 70%, 560px)',
-        padding: '12px 16px',
-        borderRadius: isUser ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-        background: isUser ? t.userBubbleBg : t.assistantBubbleBg,
-        border: `1px solid ${isUser ? t.userBubbleBorder : t.glassBorder}`,
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        // Fix 10: use t.glassHighlight for assistant bubble highlight
-        boxShadow: isUser
-          ? '0 0 20px rgba(0,37,201,0.15), inset 0 1px 1px rgba(255,255,255,0.08)'
-          : `${t.glassHighlight}, 0 4px 20px rgba(0,0,0,0.15)`,
-        fontSize: 15, color: t.textPrimary, lineHeight: 1.6,
-        wordBreak: 'break-word', whiteSpace: 'pre-wrap',
-      }}>
-        {msg.content}
-        {isStreaming && !isUser && (
-          <span style={{
-            display: 'inline-block', width: 2, height: 14, background: '#4a6de5',
-            marginLeft: 2, borderRadius: 1, verticalAlign: 'text-bottom',
-            animation: 'hydra-cursor-blink 0.8s ease-in-out infinite',
-          }} />
-        )}
-        {/* File attachments */}
-        {msg.files && msg.files.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-            {msg.files.map((f, i) => (
-              <span key={i} style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 999,
-                background: 'rgba(0,37,201,0.1)', border: '1px solid rgba(0,37,201,0.2)',
-                color: '#4a6de5',
-              }}>📎 {f.name}</span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ─── Morph Overlay — Fix 1: moved OUTSIDE App, receives props ─────────────────
+// ─── MorphOverlay ─────────────────────────────────────────────────────────────
 const MorphOverlay = ({ morphRect, morphPhase, morphText, t }) => {
   if (!morphRect || morphPhase === 0) return null;
-
   const targetTop = 24;
   const targetRight = 24;
   const targetWidth = Math.min(360, window.innerWidth * 0.6);
   const targetLeft = window.innerWidth - targetRight - targetWidth;
 
-  const style = {
-    position: 'fixed',
-    top: morphPhase === 1 ? morphRect.top : targetTop,
-    left: morphPhase === 1 ? morphRect.left : targetLeft,
-    width: morphPhase === 1 ? morphRect.width : targetWidth,
-    height: morphPhase === 1 ? morphRect.height : 'auto',
-    borderRadius: morphPhase === 1 ? 999 : '20px 20px 4px 20px',
-    background: morphPhase === 1 ? t.glassBgBase : t.userBubbleBg,
-    backdropFilter: 'blur(24px)',
-    WebkitBackdropFilter: 'blur(24px)',
-    border: `1px solid ${morphPhase === 1 ? t.glassBorder : t.userBubbleBorder}`,
-    boxShadow: morphPhase === 1
-      ? 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)'
-      : '0 0 20px rgba(0,37,201,0.2)',
-    zIndex: 2000,
-    padding: '14px 18px',
-    display: 'flex', alignItems: 'center',
-    fontSize: 15, color: t.textPrimary, lineHeight: 1.5,
-    overflow: 'hidden',
-    transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)',
-    opacity: morphPhase === 2 ? 0 : 1,
-  };
-
   return (
-    <div style={style}>
+    <div style={{
+      position: 'fixed',
+      top: morphPhase === 1 ? morphRect.top : targetTop,
+      left: morphPhase === 1 ? morphRect.left : targetLeft,
+      width: morphPhase === 1 ? morphRect.width : targetWidth,
+      height: morphPhase === 1 ? morphRect.height : 'auto',
+      borderRadius: morphPhase === 1 ? 999 : '20px 20px 4px 20px',
+      background: morphPhase === 1 ? t.glassBgBase : t.userBubbleBg,
+      backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+      border: `1px solid ${morphPhase === 1 ? t.glassBorder : t.userBubbleBorder}`,
+      boxShadow: morphPhase === 1
+        ? 'inset 0 1px 1px rgba(255,255,255,0.1), 0 0 20px rgba(0,0,0,0.4)'
+        : '0 0 20px rgba(0,37,201,0.2)',
+      zIndex: 2000, padding: '14px 18px',
+      display: 'flex', alignItems: 'center',
+      fontSize: 15, color: t.textPrimary, lineHeight: 1.5,
+      overflow: 'hidden',
+      transition: 'all 0.8s cubic-bezier(0.16,1,0.3,1)',
+      opacity: morphPhase === 2 ? 0 : 1,
+    }}>
       <span style={{ opacity: morphPhase === 1 ? 0.7 : 1, transition: 'opacity 0.3s ease' }}>
         {morphText}
       </span>
@@ -565,46 +379,30 @@ const MorphOverlay = ({ morphRect, morphPhase, morphText, t }) => {
   );
 };
 
-// ─── Input Bar (shared between IDLE and CHAT_ACTIVE) ──────────────────────────
+// ─── InputBar ─────────────────────────────────────────────────────────────────
 const InputBar = ({
-  value, onChange, onSend, onStop,
-  isStreaming, files, onFilesChange, onRemoveFile,
+  value, onChange, onSend,
+  files, onFilesChange, onRemoveFile,
   focused, onFocus, onBlur,
-  t, isDark, placeholder,
-  extraStyle,
-  autoFocusChat, // Fix 6: simpler auto-focus approach
+  t, isDark, placeholder, extraStyle, autoFocusOnMount,
 }) => {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [hoveredSend, setHoveredSend] = useState(false);
   const [hoveredClip, setHoveredClip] = useState(false);
-
-  // Fix 3: track upload interval IDs for cleanup
   const uploadIntervalsRef = useRef([]);
 
-  // Fix 3: cleanup all intervals on unmount
-  useEffect(() => {
-    return () => {
-      uploadIntervalsRef.current.forEach(clearInterval);
-    };
-  }, []);
-
-  // Fix 3: clear intervals when files array is reset (IDLE → CHAT transition)
+  useEffect(() => () => uploadIntervalsRef.current.forEach(clearInterval), []);
   useEffect(() => {
     if (files.length === 0 && uploadIntervalsRef.current.length > 0) {
       uploadIntervalsRef.current.forEach(clearInterval);
       uploadIntervalsRef.current = [];
     }
   }, [files.length]);
-
-  // Fix 6: focus textarea when autoFocusChat is true (on mount in CHAT_ACTIVE)
   useEffect(() => {
-    if (autoFocusChat) {
-      textareaRef.current?.focus();
-    }
+    if (autoFocusOnMount) textareaRef.current?.focus();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -613,32 +411,25 @@ const InputBar = ({
   }, [value]);
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (value.trim() && !isStreaming) onSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (value.trim()) onSend(); }
   };
 
-  const canSend = value.trim().length > 0 && !isStreaming;
-
-  const containerStyle = {
-    display: 'flex', flexDirection: 'column',
-    borderRadius: 999,
-    background: focused ? t.glassBgFocus : t.glassBgBase,
-    backdropFilter: 'blur(24px)',
-    WebkitBackdropFilter: 'blur(24px)',
-    border: `1px solid ${focused ? t.glassBorderFocus : t.glassBorder}`,
-    // Fix 10: use t.glassHighlight in unfocused state
-    boxShadow: focused
-      ? `0 0 24px rgba(0,37,201,0.3), inset 0 0 5px rgba(255,255,255,0.05), 0 10px 40px rgba(0,0,0,0.3)`
-      : `${t.glassHighlight}, 0 0 20px rgba(0,0,0,0.3)`,
-    transition: 'all 0.4s cubic-bezier(0.16,1,0.3,1)',
-    overflow: 'hidden',
-    ...extraStyle,
-  };
+  const canSend = value.trim().length > 0;
 
   return (
-    <div style={containerStyle}>
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      borderRadius: 999,
+      background: focused ? t.glassBgFocus : t.glassBgBase,
+      backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+      border: `1px solid ${focused ? t.glassBorderFocus : t.glassBorder}`,
+      boxShadow: focused
+        ? `0 0 24px rgba(0,37,201,0.3), inset 0 0 5px rgba(255,255,255,0.05), 0 10px 40px rgba(0,0,0,0.3)`
+        : `${t.glassHighlight}, 0 0 20px rgba(0,0,0,0.3)`,
+      transition: 'all 0.4s cubic-bezier(0.16,1,0.3,1)',
+      overflow: 'hidden',
+      ...extraStyle,
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '0 8px', minHeight: 52 }}>
         {/* Paperclip */}
         <button aria-label="Attach files"
@@ -655,62 +446,38 @@ const InputBar = ({
           <PaperclipIcon size={18} color="currentColor" />
         </button>
         <input ref={fileInputRef} type="file" multiple hidden onChange={e => {
-          const MAX_FILES = 20;
-          const MAX_SIZE_MB = 50;
-          const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+          const MAX_FILES = 20, MAX_SIZE_MB = 50, MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
           const incoming = Array.from(e.target.files);
-          const errors = [];
-          const valid = [];
-
-          // Fix 9: partial acceptance — only reject files that don't fit
+          const errors = [], valid = [];
           const currentCount = files ? files.length : 0;
           const remaining = MAX_FILES - currentCount;
           let acceptedIncoming = incoming;
-
           if (incoming.length > remaining) {
             const skipped = incoming.length - remaining;
-            errors.push(`Only ${remaining} more file${remaining !== 1 ? 's' : ''} allowed (max ${MAX_FILES}) — ${skipped} file${skipped !== 1 ? 's' : ''} skipped`);
+            errors.push(`Only ${remaining} more file${remaining !== 1 ? 's' : ''} allowed — ${skipped} skipped`);
             acceptedIncoming = incoming.slice(0, remaining);
           }
-
           for (const f of acceptedIncoming) {
-            if (f.size > MAX_SIZE_BYTES) {
-              errors.push(`"${f.name}" exceeds ${MAX_SIZE_MB}MB limit (${(f.size / 1024 / 1024).toFixed(1)}MB)`);
-            } else {
-              valid.push({ name: f.name, size: f.size, file: f, progress: 0 });
-            }
+            if (f.size > MAX_SIZE_BYTES) errors.push(`"${f.name}" exceeds ${MAX_SIZE_MB}MB`);
+            else valid.push({ name: f.name, size: f.size, file: f, progress: 0 });
           }
-
           const withErrors = errors.map(err => ({ name: '', size: 0, error: err }));
-          onFilesChange(prev => [...prev, ...withErrors, ...valid.map(f => ({ ...f, progress: 0 }))]);
-
-          // Animate progress for each valid file
-          // Fix 3: push interval IDs to ref for cleanup
-          valid.forEach((f) => {
+          onFilesChange(prev => [...prev, ...withErrors, ...valid]);
+          valid.forEach(f => {
             let prog = 0;
             const interval = setInterval(() => {
               prog += 10 + Math.random() * 20;
-              if (prog >= 100) {
-                prog = 100;
-                clearInterval(interval);
-                uploadIntervalsRef.current = uploadIntervalsRef.current.filter(id => id !== interval);
-              }
-              onFilesChange(prev => prev.map(existing =>
-                existing.name === f.name && existing.file === f.file
-                  ? { ...existing, progress: Math.round(prog) }
-                  : existing
-              ));
+              // Issue #2: cap local validation progress at 90% — only set 100% after real upload succeeds
+              if (prog >= 90) { prog = 90; clearInterval(interval); uploadIntervalsRef.current = uploadIntervalsRef.current.filter(id => id !== interval); }
+              onFilesChange(prev => prev.map(ex => ex.name === f.name && ex.file === f.file ? { ...ex, progress: Math.round(prog) } : ex));
             }, 80);
             uploadIntervalsRef.current.push(interval);
           });
-
           e.target.value = '';
         }} />
 
-        {/* Divider */}
         <div style={{ width: 1, height: 20, background: t.divider, margin: '0 4px', flexShrink: 0 }} />
 
-        {/* Textarea */}
         <textarea
           ref={textareaRef}
           value={value}
@@ -729,60 +496,29 @@ const InputBar = ({
           }}
         />
 
-        {/* Divider */}
         <div style={{ width: 1, height: 20, background: t.divider, margin: '0 4px', flexShrink: 0 }} />
 
-        {/* Send / Stop button */}
-        <div style={{ position: 'relative', width: 36, height: 36, flexShrink: 0 }}>
-          {/* Send */}
-          <button aria-label="Send"
-            onClick={onSend}
-            onMouseEnter={() => setHoveredSend(true)}
-            onMouseLeave={() => setHoveredSend(false)}
-            disabled={!canSend}
-            style={{
-              position: 'absolute', inset: 0,
-              borderRadius: '50%', border: 'none', cursor: canSend ? 'pointer' : 'default',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: canSend
-                ? (hoveredSend ? 'rgba(0,37,201,0.85)' : 'rgba(0,37,201,0.7)')
-                : 'transparent',
-              color: canSend ? 'white' : t.textSecondary,
-              // Fix 10: use t.neonGlow for Send button hover glow
-              boxShadow: canSend && hoveredSend ? t.neonGlow : 'none',
-              opacity: isStreaming ? 0 : 1,
-              transform: isStreaming ? 'scale(0.7)' : 'scale(1)',
-              transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
-            }}>
-            <SendIcon size={16} color="currentColor" />
-          </button>
-
-          {/* Stop */}
-          <button aria-label="Stop"
-            onClick={onStop}
-            style={{
-              position: 'absolute', inset: 0,
-              borderRadius: '50%', border: 'none', cursor: isStreaming ? 'pointer' : 'default',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(239,68,68,0.15)',
-              color: '#ef4444',
-              boxShadow: isStreaming ? '0 0 20px rgba(239,68,68,0.3)' : 'none',
-              opacity: isStreaming ? 1 : 0,
-              transform: isStreaming ? 'scale(1)' : 'scale(0.7)',
-              transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
-              pointerEvents: isStreaming ? 'auto' : 'none',
-            }}>
-            <StopIcon size={16} color="currentColor" />
-          </button>
-        </div>
+        <button aria-label="Send"
+          onClick={onSend}
+          onMouseEnter={() => setHoveredSend(true)}
+          onMouseLeave={() => setHoveredSend(false)}
+          disabled={!canSend}
+          style={{
+            width: 36, height: 36, borderRadius: '50%', border: 'none', cursor: canSend ? 'pointer' : 'default',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            background: canSend
+              ? (hoveredSend ? 'rgba(0,37,201,0.85)' : 'rgba(0,37,201,0.7)')
+              : 'transparent',
+            color: canSend ? 'white' : t.textSecondary,
+            boxShadow: canSend && hoveredSend ? t.neonGlow : 'none',
+            transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
+          }}>
+          <SendIcon size={16} color="currentColor" />
+        </button>
       </div>
 
-      {/* File chips */}
       {files.length > 0 && (
-        <div style={{
-          display: 'flex', flexWrap: 'wrap', gap: 6,
-          padding: '0 12px 10px 12px',
-        }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 10px 12px' }}>
           {files.map((f, i) => (
             <FileChip key={i} file={f} t={t} onRemove={() => onRemoveFile(i)} />
           ))}
@@ -792,15 +528,58 @@ const InputBar = ({
   );
 };
 
+// ─── RecentTaskCard (home page) ───────────────────────────────────────────────
+const RecentTaskCard = ({ run, onClick, isDark }) => {
+  const t = tokens(isDark);
+  const [hovered, setHovered] = useState(false);
+  const statusColor = run.status === 'completed' ? '#4ade80' : run.status === 'failed' ? '#ef4444' : '#f59e0b';
+  const statusEmoji = run.status === 'completed' ? '✅' : run.status === 'failed' ? '❌' : '🔄';
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: '12px 16px',
+        borderRadius: 14,
+        background: hovered ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.9)') : t.cardBg,
+        border: `1px solid ${hovered ? 'rgba(0,37,201,0.2)' : t.cardBorder}`,
+        backdropFilter: 'blur(20px)',
+        cursor: 'pointer',
+        transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
+        transform: hovered ? 'translateY(-2px)' : 'none',
+        boxShadow: hovered ? '0 4px 20px rgba(0,0,0,0.1)' : 'none',
+      }}
+    >
+      <div style={{
+        fontSize: 13, fontWeight: 500, color: t.textPrimary, marginBottom: 6,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        📋 "{run.task_text}"
+      </div>
+      <div style={{ display: 'flex', gap: 8, fontSize: 11, color: t.textSecondary, flexWrap: 'wrap' }}>
+        <span style={{ color: statusColor }}>{statusEmoji} {run.status}</span>
+        {run.agent_count > 0 && <span>• {run.agent_count} agents</span>}
+        {run.total_tokens > 0 && <span>• {Math.round(run.total_tokens / 1000)}k tokens</span>}
+        <span style={{ marginLeft: 'auto' }}>
+          {(() => {
+            const diff = Date.now() - new Date(run.created_at).getTime();
+            if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+            return `${Math.floor(diff / 86400000)}d ago`;
+          })()}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  // Theme
   const [isDark, setIsDark] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('hydra_dark') ?? 'true'); }
-    catch { return true; }
+    try { return JSON.parse(localStorage.getItem('hydra_dark') ?? 'true'); } catch { return true; }
   });
-
-  // Settings
   const [settings, setSettings] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('hydra_settings') ?? '{}');
@@ -810,37 +589,41 @@ export default function App() {
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [appState, setAppState] = useState('IDLE'); // IDLE | ANIMATING | CHAT_ACTIVE
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [appState, setAppState] = useState('IDLE'); // IDLE | ANIMATING | ORCHESTRATING | RESULT
   const [inputFocused, setInputFocused] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [files, setFiles] = useState([]);
+  const [authError, setAuthError] = useState(null); // Issue #1: auth failure banner
 
-  // Chat state
-  const [messages, setMessages] = useState([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const abortRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const settingsPanelRef = useRef(null);
-  const settingsBtnRef = useRef(null);
-  const [hoveredNewChat, setHoveredNewChat] = useState(false);
+  // Orchestration state
+  const [currentTask, setCurrentTask] = useState('');
+  const [orchestrationEvents, setOrchestrationEvents] = useState([]);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [result, setResult] = useState(null);
+
+  // Recent tasks on home page
+  const [recentRuns, setRecentRuns] = useState([]);
 
   // Animation state
   const [morphRect, setMorphRect] = useState(null);
   const [morphText, setMorphText] = useState('');
-  const [morphPhase, setMorphPhase] = useState(0); // 0=idle, 1=moving, 2=done
-  // Fix 7: removed unused morphRef
+  const [morphPhase, setMorphPhase] = useState(0);
   const initialBarRef = useRef(null);
 
-  // Fix 2: memoize tokens to avoid re-creating on every render
+  // Refs
+  const settingsPanelRef = useRef(null);
+  const settingsBtnRef = useRef(null);
+  const mockAbortRef = useRef(false);
+
+  // WebSocket
+  const { connect, cancel, respondConfirmation, disconnect } = useWebSocket();
+
   const t = useMemo(() => tokens(isDark), [isDark]);
 
   // Persist settings
-  useEffect(() => {
-    localStorage.setItem('hydra_settings', JSON.stringify(settings));
-  }, [settings]);
-  useEffect(() => {
-    localStorage.setItem('hydra_dark', JSON.stringify(isDark));
-  }, [isDark]);
+  useEffect(() => { localStorage.setItem('hydra_settings', JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { localStorage.setItem('hydra_dark', JSON.stringify(isDark)); }, [isDark]);
 
   // Inject styles
   useEffect(() => {
@@ -861,30 +644,17 @@ export default function App() {
       .hydra-slider { -webkit-appearance: none; appearance: none; background: transparent; }
       .hydra-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; }
       .hydra-slider::-moz-range-thumb { width: 0; height: 0; opacity: 0; }
-
       .hydra-panel::-webkit-scrollbar { width: 4px; }
       .hydra-panel::-webkit-scrollbar-track { background: transparent; }
       .hydra-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-
-      .hydra-messages::-webkit-scrollbar { width: 4px; }
-      .hydra-messages::-webkit-scrollbar-track { background: transparent; }
-      .hydra-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
-
-      @keyframes hydra-cursor-blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0; }
-      }
-
-      @keyframes hydra-morph-phase1 {
-        from { opacity: 1; }
-        to { opacity: 0.9; }
-      }
-
+      @keyframes hydra-cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+      @keyframes hydra-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.15); opacity: 0.7; } }
+      @keyframes hydra-dot-bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
+      @keyframes hydra-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+      @keyframes hydra-spin { to { transform: rotate(360deg); } }
+      @keyframes hydra-slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
       @media (max-width: 640px) {
         .hydra-idle-bar { width: 90vw !important; }
-        .hydra-chat-input-wrap { padding: 12px !important; }
-        .hydra-messages { padding: 12px !important; }
-        .hydra-settings-panel { width: 100vw !important; left: -24px !important; }
       }
     `;
     document.head.appendChild(style);
@@ -903,205 +673,218 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Escape to close settings
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') setSettingsOpen(false); };
+    const handler = (e) => { if (e.key === 'Escape') { setSettingsOpen(false); setHistoryOpen(false); } };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // Auto-scroll
+  // Load recent tasks on home page
   useEffect(() => {
-    if (isStreaming || messages.length > 0) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (appState === 'IDLE' && settings.apiBaseUrl) {
+      fetchHistory(settings.apiBaseUrl, settings.serverToken, 5)
+        .then(setRecentRuns)
+        .catch(() => {}); // silent fail
     }
-  }, [messages, isStreaming]);
+  }, [appState, settings.apiBaseUrl, settings.serverToken]);
 
   const handleSettingChange = useCallback((key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }));
   }, []);
 
-  // ── SSE Streaming handler ──────────────────────────────────────────────────
-  const streamResponse = useCallback(async (userMsg, history) => {
-    setIsStreaming(true);
-    abortRef.current = new AbortController();
-    // Fix 7: removed unused assistantIdx and appendMsg
+  // ── Start task ─────────────────────────────────────────────────────────────
+  const startOrchestration = useCallback(async (taskText, uploadedFiles = []) => {
+    setCurrentTask(taskText);
+    setOrchestrationEvents([]);
+    setIsCancelling(false);
+    setResult(null);
+    setAuthError(null);
 
-    // Add empty assistant placeholder
-    setMessages(prev => [
-      ...prev,
-      { role: 'assistant', content: '', id: Date.now() + 1 }
-    ]);
+    const addEvent = (event) => {
+      setOrchestrationEvents(prev => [...prev, event]);
+    };
 
+    if (!settings.apiBaseUrl) {
+      // Mock mode
+      mockAbortRef.current = false;
+      const gen = mockOrchestration(taskText);
+      for await (const event of gen) {
+        if (mockAbortRef.current) break;
+        addEvent(event);
+        if (event.type === 'pipeline_complete') {
+          setResult(event.data);
+          setTimeout(() => setAppState('RESULT'), 400);
+          break;
+        }
+        if (event.type === 'pipeline_error') {
+          setTimeout(() => setAppState('RESULT'), 400);
+          break;
+        }
+      }
+    } else {
+      // Real WebSocket mode
+      const filePaths = uploadedFiles.map(f => f.filepath || f);
+      const configOverrides = {
+        api_key: settings.apiKey || undefined,
+        default_model: settings.model || undefined,
+        brain_model: settings.brainModel || undefined,
+        max_concurrent_agents: settings.maxConcurrentAgents,
+        per_agent_timeout: settings.perAgentTimeout,
+        total_task_timeout: settings.totalTaskTimeout,
+        temperature: settings.temperature,
+        quality_score_threshold: settings.qualityScoreThreshold,
+        output_directory: settings.outputDirectory,
+      };
+      // Remove undefined values
+      Object.keys(configOverrides).forEach(k => configOverrides[k] === undefined && delete configOverrides[k]);
+
+      connect({
+        apiBaseUrl: settings.apiBaseUrl,
+        serverToken: settings.serverToken,
+        task: taskText,
+        files: filePaths,
+        configOverrides,
+        onEvent: (event) => {
+          addEvent(event);
+          if (event.type === 'pipeline_complete') {
+            setResult(event.data);
+            setTimeout(() => setAppState('RESULT'), 400);
+          }
+          if (event.type === 'pipeline_error') {
+            setTimeout(() => setAppState('RESULT'), 400);
+          }
+        },
+        onError: (err) => {
+          // Issue #8: set result with error so ResultView shows error state
+          setResult({ error: err, output: '', execution_summary: {} });
+          addEvent({ type: 'pipeline_error', data: { error: err }, timestamp: Date.now() / 1000 });
+          setTimeout(() => setAppState('RESULT'), 400);
+        },
+        onClose: (code) => {
+          // Issue #1: handle WS close code 4001 = bad token
+          if (code === 4001) {
+            setAuthError('Authentication failed: invalid server token (code 4001). Please check your Server Token in Settings.');
+          }
+        },
+      });
+    }
+  }, [settings, connect]);
+
+  // ── Handle send ───────────────────────────────────────────────────────────
+  const handleSend = useCallback(async () => {
+    const text = inputValue.trim();
+    if (!text) return;
+    setInputValue('');
+
+    const barEl = initialBarRef.current;
+    if (barEl && appState === 'IDLE') {
+      const rect = barEl.getBoundingClientRect();
+      setMorphRect(rect);
+      setMorphText(text);
+      setMorphPhase(1);
+      setAppState('ANIMATING');
+
+      const filesToUpload = files.filter(f => !f.error && f.file);
+      setFiles([]);
+
+      setTimeout(async () => {
+        setMorphPhase(2);
+        setTimeout(async () => {
+          setAppState('ORCHESTRATING');
+          setMorphPhase(0);
+          setMorphRect(null);
+
+          // Upload files if any (real backend only)
+          let uploadedFiles = [];
+          if (filesToUpload.length > 0 && settings.apiBaseUrl) {
+            try {
+              uploadedFiles = await uploadFiles(settings.apiBaseUrl, filesToUpload, settings.serverToken);
+              // Issue #2: set 100% only after real upload succeeds
+              setFiles(prev => prev.map(f => ({ ...f, progress: 100 })));
+            } catch (err) {
+              console.warn('File upload failed:', err);
+            }
+          } else if (filesToUpload.length > 0) {
+            // Issue #2: mock mode — go straight to 100%
+            setFiles(prev => prev.map(f => ({ ...f, progress: 100 })));
+          }
+
+          await startOrchestration(text, uploadedFiles);
+        }, 350);
+      }, 500);
+    }
+  }, [inputValue, appState, files, settings, startOrchestration]);
+
+  // ── Cancel ────────────────────────────────────────────────────────────────
+  const handleCancel = useCallback(() => {
+    setIsCancelling(true);
+    if (settings.apiBaseUrl) {
+      cancel();
+    } else {
+      mockAbortRef.current = true;
+      setTimeout(() => {
+        setAppState('IDLE');
+        setIsCancelling(false);
+        // Issue #7: clear orchestration state on cancel in mock mode
+        setOrchestrationEvents([]);
+        setCurrentTask('');
+        setFiles([]);
+      }, 500);
+    }
+  }, [settings.apiBaseUrl, cancel]);
+
+  // ── Reset to home ─────────────────────────────────────────────────────────
+  const handleNewTask = useCallback(() => {
+    disconnect();
+    mockAbortRef.current = true;
+    setAppState('IDLE');
+    setOrchestrationEvents([]);
+    setResult(null);
+    setCurrentTask('');
+    setIsCancelling(false);
+  }, [disconnect]);
+
+  // ── Open result from history ──────────────────────────────────────────────
+  const handleOpenHistoryResult = useCallback((runData) => {
+    setResult(runData.result || runData);
+    setCurrentTask(runData.task_text || '');
+    setHistoryOpen(false);
+    setAppState('RESULT');
+  }, []);
+
+  // ── Open recent task (from home) ──────────────────────────────────────────
+  const handleOpenRecentTask = useCallback(async (run) => {
+    if (!settings.apiBaseUrl) return;
     try {
-      if (!settings.apiBaseUrl) {
-        // Mock stream
-        const response = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
-        for await (const chunk of mockStream(response)) {
-          if (abortRef.current?.signal.aborted) break;
-          setMessages(prev => {
-            const copy = [...prev];
-            const last = copy[copy.length - 1];
-            if (last && last.role === 'assistant') {
-              copy[copy.length - 1] = { ...last, content: last.content + chunk };
-            }
-            return copy;
-          });
-        }
-      } else {
-        // Real SSE
-        const allMessages = [
-          ...history.map(m => ({ role: m.role, content: m.content })),
-          { role: 'user', content: userMsg },
-        ];
-        const res = await fetch(`${settings.apiBaseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.apiKey}`,
-          },
-          signal: abortRef.current.signal,
-          body: JSON.stringify({
-            model: settings.model,
-            messages: allMessages,
-            temperature: settings.temperature,
-            stream: true,
-          }),
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        // Fix 4: use streamDone flag so [DONE] breaks the outer while loop too
-        let streamDone = false;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
-            const data = line.slice(5).trim();
-            if (data === '[DONE]') {
-              streamDone = true;
-              break; // exits inner for loop
-            }
-            try {
-              const json = JSON.parse(data);
-              const chunk = json.choices?.[0]?.delta?.content ?? '';
-              if (chunk) {
-                setMessages(prev => {
-                  const copy = [...prev];
-                  const last = copy[copy.length - 1];
-                  if (last?.role === 'assistant') {
-                    copy[copy.length - 1] = { ...last, content: last.content + chunk };
-                  }
-                  return copy;
-                });
-              }
-            } catch { /* skip */ }
-          }
-          // Fix 4: break outer while loop when [DONE] was seen
-          if (streamDone) break;
-        }
-
-        // Fix 5: process any remaining content in buffer after the loop
-        if (buffer.trim().startsWith('data:')) {
-          const data = buffer.trim().slice(5).trim();
-          if (data && data !== '[DONE]') {
-            try {
-              const json = JSON.parse(data);
-              const chunk = json.choices?.[0]?.delta?.content ?? '';
-              if (chunk) {
-                setMessages(prev => {
-                  const copy = [...prev];
-                  const last = copy[copy.length - 1];
-                  if (last?.role === 'assistant') {
-                    copy[copy.length - 1] = { ...last, content: last.content + chunk };
-                  }
-                  return copy;
-                });
-              }
-            } catch { /* skip */ }
-          }
-        }
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        setMessages(prev => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last?.role === 'assistant') {
-            copy[copy.length - 1] = { ...last, content: last.content + ' [Stopped]' };
-          }
-          return copy;
-        });
-      } else {
-        setMessages(prev => [
-          ...prev,
-          { role: 'system', content: `Error: ${err.message}`, id: Date.now() + 2 }
-        ]);
-      }
-    } finally {
-      setIsStreaming(false);
-      abortRef.current = null;
+      const full = await fetchHistoryRun(settings.apiBaseUrl, settings.serverToken, run.task_id);
+      setResult(full.result || full);
+      setCurrentTask(full.task_text || run.task_text || '');
+      setAppState('RESULT');
+    } catch {
+      // If we can't fetch, just run again
+      setInputValue(run.task_text || '');
     }
   }, [settings]);
 
-  // ── Send message ─────────────────────────────────────────────────────────────
-  const handleSend = useCallback(() => {
-    const text = inputValue.trim();
-    if (!text || isStreaming) return;
-    setInputValue('');
-
-    if (appState === 'IDLE') {
-      // Begin fold animation
-      const barEl = initialBarRef.current;
-      if (barEl) {
-        const rect = barEl.getBoundingClientRect();
-        setMorphRect(rect);
-        setMorphText(text);
-        setMorphPhase(1);
-        setAppState('ANIMATING');
-
-        const userMsg = { role: 'user', content: text, files, id: Date.now() };
-        const currentHistory = [];
-        setFiles([]);
-
-        // After animation, transition to chat
-        setTimeout(() => {
-          setMorphPhase(2);
-          setTimeout(() => {
-            setAppState('CHAT_ACTIVE');
-            setMessages([userMsg]);
-            setMorphPhase(0);
-            setMorphRect(null);
-            // Start streaming after state settles
-            setTimeout(() => streamResponse(text, currentHistory), 50);
-          }, 350);
-        }, 500);
-      }
-    } else {
-      // In chat, just add message
-      const userMsg = { role: 'user', content: text, files, id: Date.now() };
-      setFiles([]);
-      const newHistory = [...messages, userMsg];
-      setMessages(newHistory);
-      streamResponse(text, messages);
-    }
-  }, [inputValue, isStreaming, appState, files, messages, streamResponse]);
-
-  const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
-
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Hover states ──────────────────────────────────────────────────────────
   const [hoveredSettingsBtn, setHoveredSettingsBtn] = useState(false);
+  const [hoveredHistoryBtn, setHoveredHistoryBtn] = useState(false);
+  const [hoveredNewChat, setHoveredNewChat] = useState(false);
+
+  // ── Nav button style ──────────────────────────────────────────────────────
+  const navBtnStyle = (active, hovered) => ({
+    width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
+    background: active ? 'rgba(0,37,201,0.15)' : hovered ? 'rgba(255,255,255,0.08)' : t.settingsBg,
+    border: `1px solid ${active ? '#0025C9' : hovered ? 'rgba(0,37,201,0.5)' : t.settingsBorder}`,
+    backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+    boxShadow: active
+      ? '0 0 25px rgba(0,37,201,0.35), inset 0 0 8px rgba(0,37,201,0.15)'
+      : hovered ? '0 0 20px rgba(0,37,201,0.25)' : 'inset 0 1px 1px rgba(255,255,255,0.05)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: active ? '#0025C9' : hovered ? t.textPrimary : t.textSecondary,
+    transform: hovered ? 'scale(1.05)' : 'scale(1)',
+    transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
+  });
 
   return (
     <div style={{
@@ -1110,93 +893,66 @@ export default function App() {
       backgroundImage: t.bgGradient,
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
       WebkitFontSmoothing: 'antialiased',
-      position: 'relative',
-      overflow: 'hidden',
+      position: 'relative', overflow: 'hidden',
       transition: 'background-color 0.4s ease',
     }}>
 
-      {/* ── New Chat Button (chat mode only) ── */}
-      {appState === 'CHAT_ACTIVE' && (
+      {/* ── Left nav: Settings + History ── */}
+      <div style={{ position: 'fixed', top: 24, left: 24, zIndex: 1001, display: 'flex', gap: 8 }}>
+        {/* Settings */}
+        <div>
+          <button
+            ref={settingsBtnRef}
+            onClick={e => { e.stopPropagation(); setSettingsOpen(p => !p); }}
+            onMouseEnter={() => setHoveredSettingsBtn(true)}
+            onMouseLeave={() => setHoveredSettingsBtn(false)}
+            aria-label="Settings"
+            style={navBtnStyle(settingsOpen, hoveredSettingsBtn)}
+          >
+            <GearIcon size={20} />
+          </button>
+          <div ref={settingsPanelRef} className="hydra-settings-panel">
+            <SettingsPanel
+              open={settingsOpen}
+              settings={settings}
+              onSettingChange={handleSettingChange}
+              isDark={isDark}
+              onToggleDark={() => setIsDark(p => !p)}
+              t={t}
+            />
+          </div>
+        </div>
+
+        {/* History */}
+        <button
+          onClick={() => setHistoryOpen(p => !p)}
+          onMouseEnter={() => setHoveredHistoryBtn(true)}
+          onMouseLeave={() => setHoveredHistoryBtn(false)}
+          aria-label="Task History"
+          style={navBtnStyle(historyOpen, hoveredHistoryBtn)}
+        >
+          <ClockIcon size={18} />
+        </button>
+      </div>
+
+      {/* ── Right nav: New Chat (or nothing during ORCHESTRATING) ── */}
+      {(appState === 'RESULT') && (
         <button
           onMouseEnter={() => setHoveredNewChat(true)}
           onMouseLeave={() => setHoveredNewChat(false)}
-          onClick={() => {
-            if (abortRef.current) abortRef.current.abort();
-            setMessages([]);
-            setInputValue('');
-            setFiles([]);
-            setIsStreaming(false);
-            setAppState('IDLE');
-          }}
-          aria-label="New Chat"
+          onClick={handleNewTask}
+          aria-label="New Task"
           style={{
             position: 'fixed', top: 24, right: 24, zIndex: 1001,
-            width: 44, height: 44, borderRadius: '50%',
-            background: hoveredNewChat ? 'rgba(255,255,255,0.08)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)'),
-            border: `1px solid ${hoveredNewChat ? 'rgba(0,37,201,0.5)' : t.settingsBorder}`,
-            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            boxShadow: hoveredNewChat
-              ? '0 0 20px rgba(0,37,201,0.25), inset 0 1px 1px rgba(255,255,255,0.1)'
-              : 'inset 0 1px 1px rgba(255,255,255,0.05), 0 4px 20px rgba(0,0,0,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: hoveredNewChat ? t.textPrimary : t.textSecondary,
-            transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
-            transform: hoveredNewChat ? 'scale(1.05)' : 'scale(1)',
+            ...navBtnStyle(false, hoveredNewChat),
           }}
         >
-          {/* New chat icon: pencil + plus */}
-          <svg viewBox="0 0 24 24" width={20} height={20} stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-          </svg>
+          <NewChatIcon size={20} />
         </button>
       )}
 
-      {/* ── Settings Button (always visible) ── */}
-      <div style={{ position: 'fixed', top: 24, left: 24, zIndex: 1001 }}>
-        <button
-          ref={settingsBtnRef}
-          onClick={e => { e.stopPropagation(); setSettingsOpen(p => !p); }}
-          onMouseEnter={() => setHoveredSettingsBtn(true)}
-          onMouseLeave={() => setHoveredSettingsBtn(false)}
-          aria-label="Settings"
-          style={{
-            width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
-            background: settingsOpen ? 'rgba(0,37,201,0.15)' : hoveredSettingsBtn ? 'rgba(255,255,255,0.08)' : t.settingsBg,
-            border: `1px solid ${settingsOpen ? '#0025C9' : hoveredSettingsBtn ? 'rgba(0,37,201,0.5)' : t.settingsBorder}`,
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            boxShadow: settingsOpen
-              ? '0 0 25px rgba(0,37,201,0.35), inset 0 0 8px rgba(0,37,201,0.15)'
-              : hoveredSettingsBtn ? '0 0 20px rgba(0,37,201,0.25)' : 'inset 0 1px 1px rgba(255,255,255,0.05)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: settingsOpen ? '#0025C9' : hoveredSettingsBtn ? t.textPrimary : t.textSecondary,
-            transform: hoveredSettingsBtn ? 'scale(1.05)' : 'scale(1)',
-            transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
-          }}>
-          <GearIcon size={20} />
-        </button>
-
-        {/* Settings Panel */}
-        <div ref={settingsPanelRef} className="hydra-settings-panel">
-          <SettingsPanel
-            open={settingsOpen}
-            settings={settings}
-            onSettingChange={handleSettingChange}
-            isDark={isDark}
-            onToggleDark={() => setIsDark(p => !p)}
-            t={t}
-          />
-        </div>
-      </div>
-
-      {/* ── Morph Animation Overlay — Fix 1: now a standalone component receiving props ── */}
-      <MorphOverlay
-        morphRect={morphRect}
-        morphPhase={morphPhase}
-        morphText={morphText}
-        t={t}
-      />
+      {/* ── Morph overlay ── */}
+      <MorphOverlay morphRect={morphRect} morphPhase={morphPhase} morphText={morphText} t={t} />
 
       {/* ── IDLE STATE ── */}
       {(appState === 'IDLE' || appState === 'ANIMATING') && (
@@ -1208,22 +964,28 @@ export default function App() {
           opacity: appState === 'ANIMATING' ? 0 : 1,
           transition: 'opacity 0.3s ease',
           pointerEvents: appState === 'ANIMATING' ? 'none' : 'auto',
-          gap: 12,
+          gap: 16,
         }}>
-          {/* Tagline */}
+          {/* Title */}
           <div style={{
             textAlign: 'center', marginBottom: 20,
             opacity: inputFocused ? 0.4 : 1,
             transition: 'opacity 0.3s ease',
           }}>
             <div style={{
-              // Fix 12: responsive title — clamp instead of fixed 72px
               fontSize: 'clamp(36px, 10vw, 72px)',
               color: t.textPrimary,
               fontFamily: '"ByteBounce", "Inter", sans-serif',
               letterSpacing: '0.04em', lineHeight: 1,
               textShadow: '0 0 40px rgba(0,37,201,0.4)',
             }}>HYDRA</div>
+            <div style={{
+              fontSize: 14, color: t.textSecondary, marginTop: 8,
+              opacity: inputFocused ? 0 : 0.7,
+              transition: 'opacity 0.3s ease',
+            }}>
+              Multi-Agent Task Orchestrator
+            </div>
           </div>
 
           {/* Input bar */}
@@ -1239,8 +1001,6 @@ export default function App() {
               value={inputValue}
               onChange={setInputValue}
               onSend={handleSend}
-              onStop={handleStop}
-              isStreaming={isStreaming}
               files={files}
               onFilesChange={setFiles}
               onRemoveFile={i => setFiles(prev => prev.filter((_, idx) => idx !== i))}
@@ -1252,74 +1012,90 @@ export default function App() {
               placeholder="Describe your task..."
             />
           </div>
+
+          {/* Recent tasks */}
+          {recentRuns.length > 0 && (
+            <div style={{
+              width: 480, maxWidth: '90vw',
+              opacity: inputFocused ? 0.3 : 1,
+              transition: 'opacity 0.3s ease',
+            }}>
+              <div style={{ fontSize: 11, color: t.textSecondary, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+                Recent
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {recentRuns.slice(0, 3).map(run => (
+                  <RecentTaskCard
+                    key={run.task_id}
+                    run={run}
+                    onClick={() => handleOpenRecentTask(run)}
+                    isDark={isDark}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── CHAT_ACTIVE STATE ── */}
-      {appState === 'CHAT_ACTIVE' && (
-        <div style={{
-          position: 'fixed', inset: 0,
-          display: 'flex', flexDirection: 'column',
-        }}>
-          {/* Messages area */}
-          <div
-            className="hydra-messages"
-            style={{
-              flex: 1, overflowY: 'auto',
-              padding: '80px 16px 16px 16px',
-              display: 'flex', flexDirection: 'column',
+      {/* ── ORCHESTRATING STATE ── */}
+      {appState === 'ORCHESTRATING' && (
+        <>
+          {/* Issue #1: auth error banner */}
+          {authError && (
+            <div style={{
+              position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 2500, maxWidth: 480, width: '90vw',
+              padding: '12px 16px', borderRadius: 12,
+              background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
+              color: '#ef4444', fontSize: 13, fontWeight: 500,
+              backdropFilter: 'blur(20px)',
+              display: 'flex', alignItems: 'center', gap: 10,
             }}>
-            {messages.map((msg, idx) => (
-              msg.role === 'system'
-                ? (
-                  <div key={msg.id ?? idx} style={{
-                    textAlign: 'center', margin: '8px 0',
-                    fontSize: 13, color: '#ef4444', opacity: 0.8,
-                    padding: '6px 12px', borderRadius: 8,
-                    background: 'rgba(239,68,68,0.08)', display: 'inline-block', alignSelf: 'center',
-                  }}>
-                    {msg.content}
-                  </div>
-                )
-                : (
-                  <MessageBubble
-                    key={msg.id ?? idx}
-                    msg={msg}
-                    isStreaming={isStreaming && idx === messages.length - 1}
-                    t={t}
-                    idx={idx}
-                  />
-                )
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Bottom Input — Fix 6: autoFocusChat instead of broken ref forwarding */}
-          <div className="hydra-chat-input-wrap" style={{
-            padding: '12px 24px 20px 24px',
-            display: 'flex', justifyContent: 'center',
-          }}>
-            <div style={{ width: '100%', maxWidth: 720 }}>
-              <InputBar
-                autoFocusChat
-                value={inputValue}
-                onChange={setInputValue}
-                onSend={handleSend}
-                onStop={handleStop}
-                isStreaming={isStreaming}
-                files={files}
-                onFilesChange={setFiles}
-                onRemoveFile={i => setFiles(prev => prev.filter((_, idx) => idx !== i))}
-                focused={inputFocused}
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-                t={t}
-                isDark={isDark}
-                placeholder="Continue the conversation..."
-              />
+              <span>🔐</span>
+              <span style={{ flex: 1 }}>{authError}</span>
+              <button onClick={() => setAuthError(null)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#ef4444', fontSize: 16, lineHeight: 1, padding: 0,
+              }}>×</button>
             </div>
-          </div>
-        </div>
+          )}
+          <OrchestrationView
+            taskText={currentTask}
+            events={orchestrationEvents}
+            isDark={isDark}
+            onCancel={handleCancel}
+            isCancelling={isCancelling}
+            onConfirmationApprove={(confId) => respondConfirmation(confId, true)}
+            onConfirmationReject={(confId) => respondConfirmation(confId, false)}
+          />
+        </>
+      )}
+
+      {/* ── RESULT STATE ── */}
+      {appState === 'RESULT' && (
+        <ResultView
+          result={result}
+          taskText={currentTask}
+          isDark={isDark}
+          apiBaseUrl={settings.apiBaseUrl}
+          onNewTask={handleNewTask}
+          onRunAgain={() => {
+            setInputValue(currentTask);
+            handleNewTask();
+          }}
+        />
+      )}
+
+      {/* ── HISTORY OVERLAY ── */}
+      {historyOpen && (
+        <HistoryPage
+          isDark={isDark}
+          apiBaseUrl={settings.apiBaseUrl}
+          serverToken={settings.serverToken}
+          onClose={() => setHistoryOpen(false)}
+          onOpenResult={handleOpenHistoryResult}
+        />
       )}
     </div>
   );
