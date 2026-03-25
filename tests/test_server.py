@@ -263,7 +263,7 @@ async def test_history_save_list_get_delete_cycle(client: AsyncClient):
     """Full CRUD cycle: save → list → get → delete."""
     db = server_module._history_db
 
-    task_id = "task_test_001"
+    task_id = "task_abcdef1234567890"
     result = {"output": "hello", "warnings": [], "files_generated": []}
 
     # Save
@@ -303,13 +303,15 @@ async def test_history_save_list_get_delete_cycle(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_history_not_found(client: AsyncClient):
-    resp = await client.get("/api/history/nonexistent_id")
+    # Valid format task_id that doesn't exist → 404
+    resp = await client.get("/api/history/task_abcdef12345678")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_delete_history_not_found(client: AsyncClient):
-    resp = await client.delete("/api/history/nonexistent_id")
+    # Valid format task_id that doesn't exist → 404
+    resp = await client.delete("/api/history/task_abcdef12345678")
     assert resp.status_code == 404
 
 

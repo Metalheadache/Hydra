@@ -117,6 +117,16 @@ class StateManager:
             '[injection_attempt_removed]',
             sanitized,
         )
+        # Llama 2 format tags
+        sanitized = re.sub(r'<<\s*SYS\s*>>', '[tag_removed]', sanitized)
+        sanitized = re.sub(r'<<\s*/\s*SYS\s*>>', '[tag_removed]', sanitized)
+        # Llama 3 / Mistral sentence tags
+        sanitized = re.sub(r'<\s*/?s\s*>', '[tag_removed]', sanitized)
+        # Mistral/Llama instruction markers
+        sanitized = re.sub(r'\[INST\]', '[tag_removed]', sanitized)
+        sanitized = re.sub(r'\[/INST\]', '[tag_removed]', sanitized)
+        # Bracketed role markers
+        sanitized = re.sub(r'\[(SYSTEM|USER|ASSISTANT)\]', '[tag_removed]', sanitized, flags=re.IGNORECASE)
         return sanitized
 
     async def get_upstream_context(

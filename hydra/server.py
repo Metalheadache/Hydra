@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -23,7 +24,7 @@ from typing import Any
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from hydra.audit import AuditLogger
@@ -58,14 +59,42 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS middleware — origins configured via HydraConfig.cors_origins
-# We defer to a post-startup reload; for now use default "*" until config is loaded
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware — reads _config.cors_origins per request so changes take effect
+# without a restart. A custom middleware is used instead of add_middleware() to
+# allow dynamic origin resolution.
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
+
+
+class DynamicCORSMiddleware(BaseHTTPMiddleware):
+    """CORS middleware that reads origins from _config on every request."""
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        origin = request.headers.get("origin")
+        cors_origins_str = _config.cors_origins if "_config" in globals() else "*"
+        allowed_origins = [o.strip() for o in cors_origins_str.split(",")]
+        allow_all = "*" in allowed_origins
+        allow_origin = "*" if allow_all else (origin if origin in allowed_origins else "")
+
+        if request.method == "OPTIONS":
+            # Preflight
+            response = Response(status_code=204)
+        else:
+            response = await call_next(request)
+
+        if allow_origin:
+            response.headers["Access-Control-Allow-Origin"] = allow_origin
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        if not allow_all and origin in allowed_origins:
+            response.headers["Vary"] = "Origin"
+        return response
+
+
+app.add_middleware(DynamicCORSMiddleware)
+
+# task_id validation pattern (used by history endpoints)
+TASK_ID_PATTERN = re.compile(r"^task_[a-f0-9]{8,}$")
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -184,6 +213,7 @@ async def update_config(body: dict) -> dict:
     if not updates:
         raise HTTPException(status_code=400, detail="No valid config fields provided.")
 
+    new_config: HydraConfig
     async with _config_lock:
         # Merge: build new config from current + overrides
         current = _config.model_dump()
@@ -193,16 +223,19 @@ async def update_config(body: dict) -> dict:
         current.update(updates)
 
         try:
-            _config = HydraConfig(**current)
+            new_config = HydraConfig(**current)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        # Re-point history DB if output_directory changed
-        new_db_path = str(Path(_config.output_directory) / "history.db")
-        if new_db_path != _DB_PATH:
-            _DB_PATH = new_db_path
-            _history_db = HistoryDB(_DB_PATH)
-            await _history_db.init()
+    # Atomic reference swap outside lock (Python reference assignment is atomic)
+    _config = new_config
+
+    # Re-point history DB if output_directory changed
+    new_db_path = str(Path(_config.output_directory) / "history.db")
+    if new_db_path != _DB_PATH:
+        _DB_PATH = new_db_path
+        _history_db = HistoryDB(_DB_PATH)
+        await _history_db.init()
 
     return _redact_config(_config)
 
@@ -252,18 +285,31 @@ async def upload_files(files: list[UploadFile]) -> list[dict]:
     if not files:
         raise HTTPException(status_code=400, detail="No files provided.")
 
-    processor = FileProcessor(_config.output_directory)
+    cfg = _config  # snapshot for consistent reads during this request
+    processor = FileProcessor(cfg.output_directory)
     results = []
-    max_bytes = _config.max_upload_file_size_mb * 1024 * 1024
+    max_bytes = cfg.max_upload_file_size_mb * 1024 * 1024
     for upload in files:
-        content = await upload.read(max_bytes + 1)
-        if len(content) > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{upload.filename}' exceeds {_config.max_upload_file_size_mb}MB limit",
-            )
+        # Read in chunks to detect oversized files early without loading everything
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await upload.read(8192)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File '{upload.filename}' exceeds {cfg.max_upload_file_size_mb}MB limit",
+                )
+            chunks.append(chunk)
+        content = b"".join(chunks)
         filename = upload.filename or "unnamed"
-        attachment = await processor.process_upload(filename, content)
+        try:
+            attachment = await processor.process_upload(filename, content)
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
         results.append(attachment.model_dump())
     return results
 
@@ -333,6 +379,8 @@ async def list_history(
 @app.get("/api/history/{task_id}", dependencies=[Depends(verify_token)])
 async def get_history_run(task_id: str) -> dict:
     """Return the full record for a specific task run."""
+    if not TASK_ID_PATTERN.match(task_id):
+        raise HTTPException(status_code=400, detail="Invalid task_id format")
     row = await _history_db.get_run(task_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Task run '{task_id}' not found.")
@@ -342,6 +390,8 @@ async def get_history_run(task_id: str) -> dict:
 @app.delete("/api/history/{task_id}", dependencies=[Depends(verify_token)])
 async def delete_history_run(task_id: str) -> dict:
     """Delete a task run record."""
+    if not TASK_ID_PATTERN.match(task_id):
+        raise HTTPException(status_code=400, detail="Invalid task_id format")
     deleted = await _history_db.delete_run(task_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Task run '{task_id}' not found.")
@@ -365,14 +415,21 @@ async def ws_task(websocket: WebSocket) -> None:
 
     Optional auth: pass ?token=<server_token> as query param when HYDRA_SERVER_TOKEN is set.
     """
-    # Auth check for WebSocket (query param ?token=...)
-    if _config.server_token:
-        token = websocket.query_params.get("token")
-        if token != _config.server_token:
-            await websocket.close(code=1008)
-            return
-
     await websocket.accept()
+
+    cfg = _config  # snapshot for consistent reads during this connection
+
+    # Auth via first message (not query param — query params are logged by proxies)
+    if cfg.server_token:
+        try:
+            raw_auth = await websocket.receive_text()
+            auth_msg = json.loads(raw_auth)
+        except Exception:
+            await websocket.close(code=4001)
+            return
+        if auth_msg.get("type") != "auth" or auth_msg.get("token") != cfg.server_token:
+            await websocket.close(code=4001)
+            return
 
     pipeline_task: asyncio.Task | None = None
     event_bus: EventBus | None = None
@@ -466,6 +523,9 @@ async def ws_task(websocket: WebSocket) -> None:
         started = time.time()
         audit = AuditLogger(task_cfg.output_directory)
         event_bus = EventBus()
+        # Mark stream consumer BEFORE any events can be emitted so the first
+        # PIPELINE_START event is queued rather than dropped.
+        event_bus._has_stream_consumer = True
 
         # Run pipeline in background task so we can handle incoming messages concurrently
         pipeline_task = asyncio.create_task(

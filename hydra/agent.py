@@ -283,11 +283,12 @@ class Agent:
                             idx = tc_delta.index if hasattr(tc_delta, "index") else 0
                             while len(tool_calls_data) <= idx:
                                 tool_calls_data.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                            if tc_delta.id:
-                                tool_calls_data[idx]["id"] += tc_delta.id or ""
+                            # Set id/name only once (first non-empty chunk wins) to avoid double-append
+                            if tc_delta.id and not tool_calls_data[idx]["id"]:
+                                tool_calls_data[idx]["id"] = tc_delta.id
                             if tc_delta.function:
-                                if tc_delta.function.name:
-                                    tool_calls_data[idx]["function"]["name"] += tc_delta.function.name or ""
+                                if tc_delta.function.name and not tool_calls_data[idx]["function"]["name"]:
+                                    tool_calls_data[idx]["function"]["name"] = tc_delta.function.name
                                 if tc_delta.function.arguments:
                                     tool_calls_data[idx]["function"]["arguments"] += tc_delta.function.arguments
 

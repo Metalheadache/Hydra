@@ -35,6 +35,19 @@ _ALLOWED_SHELL_COMMANDS = frozenset({
 _SHELL_METACHARACTERS = re.compile(r'[|;&`$><()\n\r]')
 
 
+# Dangerous env vars to strip from subprocess environment
+_DANGEROUS_ENV_VARS = frozenset({
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "AZURE_CLIENT_SECRET",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "HYDRA_API_KEY",
+})
+
+
 class RunPythonTool(BaseTool):
     """Execute Python code in an isolated temp directory and return stdout.
 
@@ -66,15 +79,28 @@ class RunPythonTool(BaseTool):
         "required": ["code"],
     }
     timeout_seconds = _PYTHON_TIMEOUT + 5
+    requires_confirmation = True  # Arbitrary code execution requires user approval
 
     async def execute(self, code: str, timeout: int = _PYTHON_TIMEOUT) -> ToolResult:
         # NOTE: Network access is not restricted at the OS level. The code subprocess
         # can freely make network calls. For true isolation, run in a container
         # with --network none or use seccomp/namespaces.
+        import os as _os
         tmp_dir = tempfile.mkdtemp(prefix="hydra_python_")
         try:
             script_path = Path(tmp_dir) / "script.py"
             script_path.write_text(code, encoding="utf-8")
+
+            # Build subprocess environment: minimal set, stripping dangerous credentials
+            safe_env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": tmp_dir,
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+            # Also strip from any inherited env (though we build from scratch here,
+            # this makes the intent explicit and guards against future changes)
+            for var in _DANGEROUS_ENV_VARS:
+                safe_env.pop(var, None)
 
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -82,12 +108,7 @@ class RunPythonTool(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tmp_dir,
-                # Restrict environment to minimal set
-                env={
-                    "PATH": "/usr/bin:/bin",
-                    "HOME": tmp_dir,
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                },
+                env=safe_env,
             )
 
             try:

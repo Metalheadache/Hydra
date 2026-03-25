@@ -9,6 +9,7 @@ AuditLogger is fully optional. Components accept it as
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,8 @@ class AuditLogger:
         self.log_path = Path(output_dir) / "audit.log"
         # Ensure the directory exists
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Lock to prevent interleaved writes under concurrent async contexts
+        self._write_lock = threading.Lock()
 
     # ── Core writer ───────────────────────────────────────────────────────────
 
@@ -42,8 +45,9 @@ class AuditLogger:
             "event_type": event_type,
             **data,
         }
-        with open(self.log_path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, default=str) + "\n")
+        with self._write_lock:
+            with open(self.log_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, default=str) + "\n")
 
     # ── Convenience helpers ───────────────────────────────────────────────────
 

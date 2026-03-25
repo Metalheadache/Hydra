@@ -332,13 +332,35 @@ class Hydra:
             retry_tasks = [engine._execute_with_retry(sub_task_id) for sub_task_id in agents_needing_retry]
             await asyncio.gather(*retry_tasks, return_exceptions=True)
 
-            # Re-synthesize to incorporate retry results
-            result = await post_brain.synthesize()
+            # Check which agents explicitly failed after retry
+            # Only skip re-synthesis if ALL agents explicitly failed (status == FAILED)
+            # Agents with missing output (e.g. during testing or if execution engine
+            # didn't write back) are treated as unknown → still re-synthesize
+            from hydra.models import AgentStatus
+            failed_retries = []
+            for sub_task_id in agents_needing_retry:
+                output = await state.get_output(sub_task_id)
+                if output is not None and output.status == AgentStatus.FAILED:
+                    logger.warning(
+                        "quality_retry_agent_still_failed",
+                        sub_task_id=sub_task_id,
+                        status=output.status,
+                    )
+                    failed_retries.append(sub_task_id)
+
+            if len(failed_retries) == len(agents_needing_retry) and failed_retries:
+                # All retries explicitly failed — keep original result, skip re-synthesis
+                logger.warning("quality_retry_all_failed", agents=failed_retries)
+            else:
+                # Some retries succeeded (or unknown) — re-synthesize
+                result = await post_brain.synthesize()
+
             result["retry_metadata"] = {
                 "retried_agents": agents_needing_retry,
                 "retry_performed": True,
+                "failed_retries": failed_retries,
             }
-            logger.info("quality_retry_complete", retried=agents_needing_retry)
+            logger.info("quality_retry_complete", retried=agents_needing_retry, failed=failed_retries)
         else:
             result["retry_metadata"] = {"retried_agents": [], "retry_performed": False}
 

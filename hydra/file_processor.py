@@ -255,13 +255,7 @@ class FileProcessor:
                 dest_path.write_bytes(content)
             except Exception as e:
                 logger.error("upload_write_failed", filename=filename, error=str(e))
-                return FileAttachment(
-                    filepath=str(dest_path),
-                    original_name=filename,
-                    mime_type=_detect_mime(Path(filename)),
-                    size_bytes=len(content),
-                    extracted_text=None,
-                )
+                raise ValueError(f"Failed to save uploaded file '{filename}': {e}")
 
             attachment = await self._process_single_path(dest_path, original_name=filename)
             return attachment
