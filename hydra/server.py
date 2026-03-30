@@ -369,6 +369,82 @@ async def run_task(body: dict) -> dict:
     return result
 
 
+# ── Export ─────────────────────────────────────────────────────────────────────
+
+@app.post("/api/export/docx", dependencies=[Depends(verify_token)])
+async def export_docx(body: dict) -> Any:
+    """
+    Convert synthesis text (markdown) to a .docx file and return it for download.
+    Body: { "title": "...", "content": "...", "metadata": { ... } }
+    """
+    import asyncio
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    import io
+    from starlette.responses import Response
+
+    title = body.get("title", "Hydra Report")
+    content = body.get("content", "")
+    metadata = body.get("metadata", {})
+
+    def _build_docx() -> bytes:
+        doc = Document()
+
+        # Title
+        heading = doc.add_heading(title, level=0)
+        heading.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
+        # Metadata
+        if metadata:
+            meta_parts = []
+            if metadata.get("elapsed"):
+                meta_parts.append(f"Duration: {metadata['elapsed']}")
+            if metadata.get("tokens"):
+                meta_parts.append(f"Tokens: {metadata['tokens']}")
+            if metadata.get("agents"):
+                meta_parts.append(f"Agents: {metadata['agents']}")
+            if meta_parts:
+                meta_para = doc.add_paragraph(" | ".join(meta_parts))
+                meta_para.style.font.size = Pt(9)
+                meta_para.style.font.italic = True
+
+        doc.add_paragraph("")  # spacer
+
+        # Content — basic markdown-to-docx conversion
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                doc.add_paragraph("")
+            elif stripped.startswith("### "):
+                doc.add_heading(stripped[4:], level=3)
+            elif stripped.startswith("## "):
+                doc.add_heading(stripped[3:], level=2)
+            elif stripped.startswith("# "):
+                doc.add_heading(stripped[2:], level=1)
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                doc.add_paragraph(stripped[2:], style="List Bullet")
+            elif stripped.startswith("1. ") or stripped.startswith("2. ") or stripped.startswith("3. "):
+                doc.add_paragraph(stripped[stripped.index(". ") + 2:], style="List Number")
+            elif stripped.startswith("> "):
+                para = doc.add_paragraph(stripped[2:])
+                para.style = doc.styles["Quote"] if "Quote" in [s.name for s in doc.styles] else para.style
+            else:
+                doc.add_paragraph(stripped)
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    docx_bytes = await asyncio.to_thread(_build_docx)
+
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{title}.docx"'},
+    )
+
+
 # ── History ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/files/{filename:path}", dependencies=[Depends(verify_token)])

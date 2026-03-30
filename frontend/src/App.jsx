@@ -3,7 +3,7 @@ import OrchestrationView from './OrchestrationView.jsx';
 import ResultView from './ResultView.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import { mockOrchestration } from './mockOrchestration.js';
-import { useWebSocket, uploadFiles, fetchHistory, fetchHistoryRun } from './useWebSocket.js';
+import { useWebSocket, uploadFiles, fetchHistory, fetchHistoryRun, normalizeError } from './useWebSocket.js';
 import {
   tokens,
   GearIcon, ClockIcon, PaperclipIcon, SendIcon, StopIcon,
@@ -541,6 +541,124 @@ const InputBar = ({
   );
 };
 
+// ─── ConnectionBanner ────────────────────────────────────────────────────────
+const ConnectionBanner = ({ connectionState, reconnectAttempt, maxReconnectAttempts, onRetry, t, isDark }) => {
+  const configs = {
+    connecting: { bg: 'rgba(74,109,229,0.12)', border: 'rgba(74,109,229,0.3)', color: '#4a6de5', text: 'Connecting to server...' },
+    reconnecting: {
+      bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b',
+      text: `Connection lost. Reconnecting (attempt ${reconnectAttempt}/${maxReconnectAttempts})...`,
+    },
+    failed: { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', color: '#ef4444', text: 'Connection failed. Check server and try again.' },
+  };
+  const cfg = configs[connectionState];
+  if (!cfg) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 3500,
+      padding: '10px 20px',
+      background: cfg.bg,
+      borderBottom: `1px solid ${cfg.border}`,
+      backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+      color: cfg.color, fontSize: 13, fontWeight: 500,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+      animation: 'hydra-slide-down 0.3s ease-out',
+    }}>
+      {connectionState === 'connecting' && (
+        <div style={{ width: 14, height: 14, border: `2px solid ${cfg.color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'hydra-spin 0.8s linear infinite' }} />
+      )}
+      {connectionState === 'reconnecting' && (
+        <div style={{ width: 14, height: 14, border: `2px solid ${cfg.color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'hydra-spin 0.8s linear infinite' }} />
+      )}
+      <span>{cfg.text}</span>
+      {connectionState === 'failed' && onRetry && (
+        <button onClick={onRetry} style={{
+          padding: '4px 12px', borderRadius: 6,
+          background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)',
+          color: '#ef4444', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+        }}>
+          Retry
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ─── Toast system ────────────────────────────────────────────────────────────
+const TOAST_TYPES = {
+  success: { bg: 'rgba(74,222,128,0.15)', border: 'rgba(74,222,128,0.3)', color: '#4ade80', icon: '✓' },
+  warning: { bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b', icon: '⚠' },
+  error:   { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)', color: '#ef4444', icon: '✕' },
+  info:    { bg: 'rgba(74,109,229,0.15)', border: 'rgba(74,109,229,0.3)', color: '#4a6de5', icon: 'ℹ' },
+};
+
+let toastIdCounter = 0;
+
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'info') => {
+    const id = ++toastIdCounter;
+    setToasts(prev => {
+      const next = [...prev, { id, message, type }];
+      // Max 3 visible — remove oldest
+      return next.length > 3 ? next.slice(next.length - 3) : next;
+    });
+    // Auto-dismiss after 5s (errors stay)
+    if (type !== 'error') {
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 5000);
+    }
+    return id;
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, addToast, removeToast };
+}
+
+const ToastContainer = ({ toasts, onDismiss, isDark }) => {
+  const t = tokens(isDark);
+  if (toasts.length === 0) return null;
+  return (
+    <div style={{
+      position: 'fixed', bottom: 20, right: 20, zIndex: 4000,
+      display: 'flex', flexDirection: 'column', gap: 8,
+      pointerEvents: 'none',
+    }}>
+      {toasts.map(toast => {
+        const cfg = TOAST_TYPES[toast.type] || TOAST_TYPES.info;
+        return (
+          <div key={toast.id} style={{
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: isDark ? cfg.bg : cfg.bg.replace('0.15', '0.25'),
+            border: `1px solid ${cfg.border}`,
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+            color: cfg.color, fontSize: 13, fontWeight: 500,
+            display: 'flex', alignItems: 'center', gap: 8,
+            pointerEvents: 'auto',
+            animation: 'hydra-slide-in 0.3s ease-out',
+            maxWidth: 340,
+          }}>
+            <span style={{ fontSize: 14, flexShrink: 0 }}>{cfg.icon}</span>
+            <span style={{ flex: 1 }}>{toast.message}</span>
+            <button onClick={() => onDismiss(toast.id)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: cfg.color, fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0, opacity: 0.7,
+            }}>×</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // ─── RecentTaskCard (home page) ───────────────────────────────────────────────
 const RecentTaskCard = ({ run, onClick, isDark }) => {
   const t = tokens(isDark);
@@ -632,7 +750,11 @@ export default function App() {
   const mockAbortRef = useRef(false);
 
   // WebSocket
-  const { connect, cancel, respondConfirmation, disconnect } = useWebSocket();
+  const { connect, cancel, respondConfirmation, disconnect, retry,
+    connectionState, reconnectAttempt, maxReconnectAttempts } = useWebSocket();
+
+  // Toasts
+  const { toasts, addToast, removeToast } = useToasts();
 
   const t = useMemo(() => tokens(isDark), [isDark]);
 
@@ -668,6 +790,7 @@ export default function App() {
       @keyframes hydra-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
       @keyframes hydra-spin { to { transform: rotate(360deg); } }
       @keyframes hydra-slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+      @keyframes hydra-slide-down { from { transform: translateY(-100%); } to { transform: translateY(0); } }
       @media (max-width: 640px) {
         .hydra-idle-bar { width: 90vw !important; }
       }
@@ -787,9 +910,16 @@ export default function App() {
             setAuthError('Authentication failed: invalid server token (code 4001). Please check your Server Token in Settings.');
           }
         },
+        onConnectionStateChange: (state) => {
+          if (state === 'reconnecting') {
+            addToast('Connection lost. Attempting to reconnect...', 'warning');
+          } else if (state === 'failed') {
+            addToast('Connection failed. Check server status.', 'error');
+          }
+        },
       });
     }
-  }, [settings, connect]);
+  }, [settings, connect, addToast]);
 
   // ── Handle send ───────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
@@ -917,6 +1047,19 @@ export default function App() {
       position: 'relative', overflow: 'hidden',
       transition: 'background-color 0.4s ease',
     }}>
+
+      {/* ── Connection banner ── */}
+      <ConnectionBanner
+        connectionState={connectionState}
+        reconnectAttempt={reconnectAttempt}
+        maxReconnectAttempts={maxReconnectAttempts}
+        onRetry={retry}
+        t={t}
+        isDark={isDark}
+      />
+
+      {/* ── Toast notifications ── */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} isDark={isDark} />
 
       {/* ── Left nav: Settings + History ── */}
       <div style={{ position: 'fixed', top: 24, left: 24, zIndex: 1001, display: 'flex', gap: 8 }}>
@@ -1083,6 +1226,11 @@ export default function App() {
             isCancelling={isCancelling}
             onConfirmationApprove={(confId) => respondConfirmation(confId, true)}
             onConfirmationReject={(confId) => respondConfirmation(confId, false)}
+            connectionState={connectionState}
+            onRetryPipeline={() => {
+              setInputValue(currentTask);
+              handleNewTask();
+            }}
           />
         </>
       )}
@@ -1099,6 +1247,7 @@ export default function App() {
             setInputValue(currentTask);
             handleNewTask();
           }}
+          addToast={addToast}
         />
       )}
 

@@ -262,6 +262,7 @@ export default function ResultView({
   apiBaseUrl,
   onNewTask,
   onRunAgain,
+  addToast,
 }) {
   const t = tokens(isDark);
   const [copied, setCopied] = useState(false);
@@ -275,12 +276,53 @@ export default function ResultView({
   const filesGenerated = result?.files_generated || [];
   const summary = result?.execution_summary || {};
 
+  // B1: Copy full result including metadata
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(synthesis).then(() => {
+    const parts = [synthesis];
+    if (Object.keys(perAgentQuality).length > 0) {
+      parts.push('\n\n--- Agent Results ---');
+      for (const [id, data] of Object.entries(perAgentQuality)) {
+        parts.push(`\n${data?.role || id} (score: ${data?.score ?? 'N/A'})`);
+        if (data?.output) parts.push(typeof data.output === 'string' ? data.output : JSON.stringify(data.output));
+      }
+    }
+    if (summary.total_tokens) parts.push(`\n\nTokens: ${summary.total_tokens} | Agents: ${summary.agent_count || 0}`);
+    navigator.clipboard.writeText(parts.join('\n')).then(() => {
       setCopied(true);
+      addToast?.('Result copied to clipboard', 'success');
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [synthesis]);
+  }, [synthesis, perAgentQuality, summary, addToast]);
+
+  // B2: PDF export via window.print() with print-specific styles
+  const handlePrintPDF = useCallback(() => {
+    // Inject a print stylesheet temporarily
+    const styleId = 'hydra-print-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        @media print {
+          body * { visibility: hidden !important; }
+          #hydra-print-area, #hydra-print-area * { visibility: visible !important; }
+          #hydra-print-area {
+            position: absolute !important; left: 0 !important; top: 0 !important;
+            width: 100% !important; padding: 24px !important;
+            background: white !important; color: #1e293b !important;
+          }
+          #hydra-print-area h1, #hydra-print-area h2, #hydra-print-area h3 {
+            color: #0f172a !important; page-break-after: avoid;
+          }
+          #hydra-print-area .print-section { page-break-inside: avoid; margin-bottom: 16px; }
+          #hydra-print-area pre { background: #f1f5f9 !important; color: #1e293b !important; border: 1px solid #e2e8f0 !important; }
+          @page { margin: 1in; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    window.print();
+    addToast?.('PDF export initiated', 'info');
+  }, [addToast]);
 
   const tabs = [
     { id: 'output', label: '📄 Output' },
@@ -332,19 +374,69 @@ export default function ResultView({
         {/* Actions */}
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           {!hasError && (
-            <button onClick={handleCopy} style={{
-              padding: '7px 12px', borderRadius: 8,
-              background: copied ? 'rgba(74,222,128,0.15)' : t.cardBg,
-              border: `1px solid ${copied ? 'rgba(74,222,128,0.3)' : t.cardBorder}`,
-              color: copied ? '#4ade80' : t.textSecondary,
-              cursor: 'pointer', fontSize: 12, fontWeight: 500,
-              display: 'flex', alignItems: 'center', gap: 5,
-              backdropFilter: 'blur(10px)',
-              transition: 'all 0.2s ease',
-            }}>
-              <CopyIcon size={13} />
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
+            <>
+              <button onClick={handleCopy} style={{
+                padding: '7px 12px', borderRadius: 8,
+                background: copied ? 'rgba(74,222,128,0.15)' : t.cardBg,
+                border: `1px solid ${copied ? 'rgba(74,222,128,0.3)' : t.cardBorder}`,
+                color: copied ? '#4ade80' : t.textSecondary,
+                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 5,
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.2s ease',
+              }}>
+                <CopyIcon size={13} />
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button onClick={handlePrintPDF} style={{
+                padding: '7px 12px', borderRadius: 8,
+                background: t.cardBg,
+                border: `1px solid ${t.cardBorder}`,
+                color: t.textSecondary,
+                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 5,
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.2s ease',
+              }}>
+                <DownloadIcon size={13} />
+                Export PDF
+              </button>
+              <button onClick={async () => {
+                try {
+                  const base = window.location.origin;
+                  const headers = { 'Content-Type': 'application/json' };
+                  if (window.__hydraServerToken) headers['X-API-Key'] = window.__hydraServerToken;
+                  const res = await fetch(`${base}/api/export/docx`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({
+                      title: 'Hydra Report',
+                      content: synthesis || '',
+                      metadata: { elapsed: summary.elapsed_time, tokens: summary.total_tokens, agents: summary.agent_count },
+                    }),
+                  });
+                  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url; a.download = 'Hydra Report.docx'; a.click();
+                  URL.revokeObjectURL(url);
+                } catch (err) {
+                  console.error('DOCX export failed:', err);
+                }
+              }} style={{
+                padding: '7px 12px', borderRadius: 8,
+                background: t.cardBg,
+                border: `1px solid ${t.cardBorder}`,
+                color: t.textSecondary,
+                cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                display: 'flex', alignItems: 'center', gap: 5,
+                backdropFilter: 'blur(10px)',
+                transition: 'all 0.2s ease',
+              }}>
+                <DownloadIcon size={13} />
+                DOCX
+              </button>
+            </>
           )}
           {onRunAgain && (
             <button onClick={onRunAgain} style={{
@@ -405,7 +497,7 @@ export default function ResultView({
       </div>
 
       {/* Content */}
-      <div style={{
+      <div id="hydra-print-area" style={{
         flex: 1, overflowY: 'auto',
         padding: '20px',
         scrollbarWidth: 'thin',

@@ -515,6 +515,8 @@ export default function OrchestrationView({
   isCancelling,
   onConfirmationApprove,
   onConfirmationReject,
+  connectionState,
+  onRetryPipeline,
 }) {
   const t = tokens(isDark);
 
@@ -846,7 +848,7 @@ export default function OrchestrationView({
       {/* Issue #9: pipeline error banner */}
       {pipelineError && (
         <div style={{
-          padding: '10px 20px',
+          padding: '12px 20px',
           background: 'rgba(239,68,68,0.12)',
           border: '1px solid rgba(239,68,68,0.3)',
           borderTop: 'none',
@@ -856,10 +858,40 @@ export default function OrchestrationView({
         }}>
           <span>⚠️ Pipeline Error:</span>
           <span style={{ flex: 1 }}>{pipelineError}</span>
+          {onRetryPipeline && (
+            <button onClick={onRetryPipeline} style={{
+              padding: '4px 12px', borderRadius: 6,
+              background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)',
+              color: '#ef4444', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+            }}>
+              Try Again
+            </button>
+          )}
           <button onClick={() => setPipelineError(null)} style={{
             background: 'none', border: 'none', cursor: 'pointer',
             color: '#ef4444', fontSize: 16, lineHeight: 1, padding: 0,
           }}>×</button>
+        </div>
+      )}
+
+      {/* Connection lost during pipeline */}
+      {(connectionState === 'reconnecting' || connectionState === 'failed') && !pipelineError && (
+        <div style={{
+          padding: '12px 20px',
+          background: connectionState === 'failed' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)',
+          border: `1px solid ${connectionState === 'failed' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+          borderTop: 'none',
+          color: connectionState === 'failed' ? '#ef4444' : '#f59e0b',
+          fontSize: 13, fontWeight: 500,
+          display: 'flex', alignItems: 'center', gap: 10,
+          flexShrink: 0,
+        }}>
+          <span>{connectionState === 'failed' ? '⚠️' : '🔄'}</span>
+          <span style={{ flex: 1 }}>
+            {connectionState === 'failed'
+              ? 'Connection lost during execution. Partial results may be available.'
+              : 'Connection lost during execution. Attempting to reconnect...'}
+          </span>
         </div>
       )}
 

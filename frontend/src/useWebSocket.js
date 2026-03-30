@@ -1,5 +1,5 @@
 // WebSocket hook for connecting to Hydra backend
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 
 /**
  * Build the WebSocket URL from settings.
@@ -19,36 +19,67 @@ function buildRestUrl() {
   return window.location.origin.replace(/\/$/, '');
 }
 
+// ── Error normalization ──────────────────────────────────────────────────────
+export function normalizeError(error) {
+  const raw = typeof error === 'string' ? { message: error } : (error || {});
+  return {
+    code: raw.code || 'UNKNOWN',
+    message: raw.message || 'An unexpected error occurred',
+    source: raw.source || 'unknown', // 'network', 'server', 'llm', 'auth'
+    retriable: raw.retriable ?? true,
+    timestamp: Date.now(),
+  };
+}
+
+// ── Reconnect constants ──────────────────────────────────────────────────────
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 16000;
+const JITTER_FACTOR = 0.2; // ±20%
+
+function getReconnectDelay(attempt) {
+  const base = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
+  const jitter = base * JITTER_FACTOR * (Math.random() * 2 - 1); // ±20%
+  return Math.round(base + jitter);
+}
+
 export function useWebSocket() {
   const wsRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const lastConnectOptsRef = useRef(null);
+  const hasActiveTaskRef = useRef(false);
+  const intentionalCloseRef = useRef(false);
+
+  // Reconnect state exposed for UI
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [connectionState, setConnectionState] = useState('idle');
+  // idle | connecting | connected | reconnecting | failed
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
 
   /**
-   * Connect to the backend and start a task.
-   *
-   * @param {object} options
-   * @param {string} options.apiBaseUrl
-   * @param {string} options.serverToken  — optional auth token
-   * @param {string} options.task
-   * @param {string[]} options.files      — file paths from upload API
-   * @param {object} options.configOverrides
-   * @param {function} options.onEvent    — called with each HydraEvent object
-   * @param {function} options.onError    — called on error
-   * @param {function} options.onClose    — called when socket closes
+   * Internal: create a WebSocket connection. Used by both connect() and reconnect.
    */
-  const connect = useCallback(({
-    apiBaseUrl,
-    serverToken,
-    task,
-    files = [],
-    configOverrides = {},
-    onEvent,
-    onError,
-    onClose,
-  }) => {
-    // Close existing connection
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  const createConnection = useCallback((opts, isReconnect = false) => {
+    const {
+      serverToken,
+      task,
+      files = [],
+      configOverrides = {},
+      onEvent,
+      onError,
+      onClose,
+      onConnectionStateChange,
+    } = opts;
+
+    if (!isReconnect) {
+      setConnectionState('connecting');
+      onConnectionStateChange?.('connecting');
     }
 
     const url = buildWsUrl();
@@ -56,28 +87,35 @@ export function useWebSocket() {
     try {
       ws = new WebSocket(url);
     } catch (err) {
-      onError?.(err.message || 'Failed to connect');
+      const normalized = normalizeError({ message: err.message || 'Failed to connect', source: 'network' });
+      onError?.(normalized.message);
+      setConnectionState('failed');
+      onConnectionStateChange?.('failed');
       return;
     }
     wsRef.current = ws;
 
-    // Keepalive ping every 30s to prevent proxy/browser from killing idle WS
     let pingInterval = null;
 
     ws.onopen = () => {
       try {
-        // Send auth first if token configured
+        setConnectionState('connected');
+        setReconnectAttempt(0);
+        onConnectionStateChange?.('connected');
+
         if (serverToken) {
           ws.send(JSON.stringify({ type: 'auth', token: serverToken }));
         }
-        // Send start_task
-        ws.send(JSON.stringify({
-          type: 'start_task',
-          task,
-          files: files.length > 0 ? files : null,
-          config_overrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
-        }));
-        // Start keepalive
+        // Only send start_task on initial connect, not reconnect
+        if (!isReconnect) {
+          hasActiveTaskRef.current = true;
+          ws.send(JSON.stringify({
+            type: 'start_task',
+            task,
+            files: files.length > 0 ? files : null,
+            config_overrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
+          }));
+        }
         pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }));
@@ -92,21 +130,83 @@ export function useWebSocket() {
       try {
         const event = JSON.parse(e.data);
         onEvent?.(event);
+        // Mark task as no longer active on completion/error
+        if (event.type === 'pipeline_complete' || event.type === 'pipeline_error') {
+          hasActiveTaskRef.current = false;
+        }
       } catch {
         // ignore parse errors
       }
     };
 
     ws.onerror = () => {
-      onError?.('WebSocket connection failed');
+      const normalized = normalizeError({ message: 'WebSocket connection failed', source: 'network' });
+      onError?.(normalized.message);
     };
 
     ws.onclose = (e) => {
       if (pingInterval) clearInterval(pingInterval);
       wsRef.current = null;
-      onClose?.(e.code, e.reason);
+
+      // Attempt reconnect on unexpected close if task was active
+      if (!intentionalCloseRef.current && e.code !== 1000 && hasActiveTaskRef.current) {
+        setReconnectAttempt(prev => {
+          const next = prev + 1;
+          if (next > MAX_RECONNECT_ATTEMPTS) {
+            setConnectionState('failed');
+            onConnectionStateChange?.('failed');
+            onClose?.(e.code, e.reason);
+            return next;
+          }
+          setConnectionState('reconnecting');
+          onConnectionStateChange?.('reconnecting');
+          const delay = getReconnectDelay(prev);
+          reconnectTimerRef.current = setTimeout(() => {
+            createConnection(opts, true);
+          }, delay);
+          return next;
+        });
+      } else {
+        if (hasActiveTaskRef.current && e.code !== 1000 && !intentionalCloseRef.current) {
+          setConnectionState('failed');
+          onConnectionStateChange?.('failed');
+        } else {
+          setConnectionState('idle');
+          onConnectionStateChange?.('idle');
+        }
+        onClose?.(e.code, e.reason);
+      }
     };
-  }, []);
+  }, [clearReconnectTimer]);
+
+  /**
+   * Connect to the backend and start a task.
+   */
+  const connect = useCallback(({
+    apiBaseUrl,
+    serverToken,
+    task,
+    files = [],
+    configOverrides = {},
+    onEvent,
+    onError,
+    onClose,
+    onConnectionStateChange,
+  }) => {
+    // Close existing connection
+    intentionalCloseRef.current = true;
+    clearReconnectTimer();
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    intentionalCloseRef.current = false;
+    setReconnectAttempt(0);
+
+    const opts = { apiBaseUrl, serverToken, task, files, configOverrides, onEvent, onError, onClose, onConnectionStateChange };
+    lastConnectOptsRef.current = opts;
+    createConnection(opts, false);
+  }, [createConnection, clearReconnectTimer]);
 
   const cancel = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -125,13 +225,32 @@ export function useWebSocket() {
   }, []);
 
   const disconnect = useCallback(() => {
+    intentionalCloseRef.current = true;
+    clearReconnectTimer();
+    hasActiveTaskRef.current = false;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
-  }, []);
+    setConnectionState('idle');
+    setReconnectAttempt(0);
+    intentionalCloseRef.current = false;
+  }, [clearReconnectTimer]);
 
-  return { connect, cancel, respondConfirmation, disconnect };
+  /** Retry connection after failure — resets attempt counter */
+  const retry = useCallback(() => {
+    if (lastConnectOptsRef.current) {
+      setReconnectAttempt(0);
+      setConnectionState('connecting');
+      createConnection(lastConnectOptsRef.current, false);
+    }
+  }, [createConnection]);
+
+  return {
+    connect, cancel, respondConfirmation, disconnect, retry,
+    connectionState, reconnectAttempt,
+    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+  };
 }
 
 /**
