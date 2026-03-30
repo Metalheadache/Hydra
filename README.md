@@ -137,9 +137,11 @@ The built-in web interface provides a real-time view of the multi-agent pipeline
 **Features:**
 - Live agent cards with status, tool calls, token preview, quality scores
 - Streaming synthesis output token-by-token
-- Result view with markdown rendering, agent breakdown, file downloads, export
+- Result view with markdown rendering, agent breakdown, file downloads
+- Export: clipboard (with metadata), PDF (print stylesheet), DOCX (server-generated)
 - Task history with search and re-run
 - Human-in-the-loop confirmation modals
+- Connection state monitoring with error banners and toast notifications
 - Dark/light mode with glassmorphism design
 - Works without backend (mock mode for demo)
 
@@ -164,6 +166,7 @@ python -m hydra --host 0.0.0.0 --port 8000
 | `GET` | `/api/models` | Suggested model list |
 | `POST` | `/api/upload` | Upload files for processing |
 | `POST` | `/api/task` | Run task (REST, non-streaming) |
+| `POST` | `/api/export/docx` | Export result as DOCX |
 | `GET` | `/api/history` | List past task runs |
 | `GET` | `/api/history/{id}` | Full result for a past run |
 | `DELETE` | `/api/history/{id}` | Delete a history entry |
@@ -423,7 +426,7 @@ Hydra extracts text from 30+ file formats for agent context:
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-# 287 tests covering core pipeline, security, streaming, events, server, history
+# 292 tests covering core pipeline, security, streaming, events, server, history
 ```
 
 ---
@@ -462,12 +465,25 @@ hydra.tool_registry.register(MyTool())
 
 ## Roadmap
 
+**Phase 4 (in progress):**
+- [x] Connection error handling (state machine, banners, toasts)
+- [x] Export: clipboard + PDF + DOCX
+- [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes)
+- [ ] Human-in-the-loop confirmation modal polish
+- [ ] Settings: test connection, brain strategy selector, cost estimation
+- [ ] Data classification / sensitivity routing
+- [ ] Responsive polish (mobile/tablet/desktop)
+
+**Phase 5:**
 - [ ] PyInstaller standalone executable (download → double-click → done)
 - [ ] PyPI package (`pip install hydra-agents`)
-- [ ] Settings: test connection, brain strategy selector, cost estimation
+- [ ] Vite build → FastAPI serves static
+
+**Phase 6:**
 - [ ] MCP (Model Context Protocol) tool integration
 - [ ] Vector store / RAG tool
 - [ ] Docker deployment with `--network none` sandboxing
+- [ ] Webhook triggers
 
 ---
 
