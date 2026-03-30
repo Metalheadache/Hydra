@@ -140,7 +140,17 @@ class EventBus:
     async def close(self) -> None:
         """Signal stream() consumers to stop by pushing a sentinel."""
         await self.drain()
-        await self._queue.put(None)  # sentinel
+        # If queue is full, drain items to make room for sentinel
+        while self._queue.full():
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        try:
+            self._queue.put_nowait(None)  # sentinel — non-blocking
+        except asyncio.QueueFull:
+            pass  # consumer already gone, sentinel not needed
+        self._has_stream_consumer = False
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 
@@ -153,11 +163,14 @@ class EventBus:
         Sets _has_stream_consumer=True so emit() starts enqueuing events.
         """
         self._has_stream_consumer = True
-        while True:
-            event = await self._queue.get()
-            if event is None:
-                break
-            yield event
+        try:
+            while True:
+                event = await self._queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            self._has_stream_consumer = False
 
 
     # ── Confirmation gates ────────────────────────────────────────────────────

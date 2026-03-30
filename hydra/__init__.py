@@ -218,7 +218,8 @@ class Hydra:
                 data={"error": "Pipeline timed out"},
             )
         finally:
-            pipeline_task.cancel()
+            if not pipeline_task.done():
+                pipeline_task.cancel()
             try:
                 await pipeline_task
             except (asyncio.CancelledError, Exception) as exc:

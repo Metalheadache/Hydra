@@ -34,6 +34,7 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS metadata
     ipaddress.ip_network("::1/128"),          # IPv6 loopback
     ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
+    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
 ]
 _BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
 
