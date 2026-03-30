@@ -875,23 +875,19 @@ export default function OrchestrationView({
       )}
 
       {/* Connection lost during pipeline */}
-      {(connectionState === 'reconnecting' || connectionState === 'failed') && !pipelineError && (
+      {connectionState === 'failed' && !pipelineError && (
         <div style={{
           padding: '12px 20px',
-          background: connectionState === 'failed' ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)',
-          border: `1px solid ${connectionState === 'failed' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`,
+          background: 'rgba(239,68,68,0.12)',
+          border: '1px solid rgba(239,68,68,0.3)',
           borderTop: 'none',
-          color: connectionState === 'failed' ? '#ef4444' : '#f59e0b',
+          color: '#ef4444',
           fontSize: 13, fontWeight: 500,
           display: 'flex', alignItems: 'center', gap: 10,
           flexShrink: 0,
         }}>
-          <span>{connectionState === 'failed' ? '⚠️' : '🔄'}</span>
-          <span style={{ flex: 1 }}>
-            {connectionState === 'failed'
-              ? 'Connection lost during execution. Partial results may be available.'
-              : 'Connection lost during execution. Attempting to reconnect...'}
-          </span>
+          <span>⚠️</span>
+          <span style={{ flex: 1 }}>Connection lost during execution. Partial results may be available — check History.</span>
         </div>
       )}
 

@@ -31,36 +31,17 @@ export function normalizeError(error) {
   };
 }
 
-// ── Reconnect constants ──────────────────────────────────────────────────────
-const MAX_RECONNECT_ATTEMPTS = 5;
-const BASE_DELAY_MS = 1000;
-const MAX_DELAY_MS = 16000;
-const JITTER_FACTOR = 0.2; // ±20%
 
-function getReconnectDelay(attempt) {
-  const base = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
-  const jitter = base * JITTER_FACTOR * (Math.random() * 2 - 1); // ±20%
-  return Math.round(base + jitter);
-}
 
 export function useWebSocket() {
   const wsRef = useRef(null);
-  const reconnectTimerRef = useRef(null);
   const lastConnectOptsRef = useRef(null);
   const hasActiveTaskRef = useRef(false);
   const intentionalCloseRef = useRef(false);
 
-  // Reconnect state exposed for UI
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  // Connection state exposed for UI
   const [connectionState, setConnectionState] = useState('idle');
-  // idle | connecting | connected | reconnecting | failed
-
-  const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  }, []);
+  // idle | connecting | connected | failed
 
   /**
    * Internal: create a WebSocket connection. Used by both connect() and reconnect.
@@ -148,36 +129,25 @@ export function useWebSocket() {
       if (pingInterval) clearInterval(pingInterval);
       wsRef.current = null;
 
-      // Attempt reconnect on unexpected close if task was active
-      if (!intentionalCloseRef.current && e.code !== 1000 && hasActiveTaskRef.current) {
-        setReconnectAttempt(prev => {
-          const next = prev + 1;
-          if (next > MAX_RECONNECT_ATTEMPTS) {
-            setConnectionState('failed');
-            onConnectionStateChange?.('failed');
-            onClose?.(e.code, e.reason);
-            return next;
-          }
-          setConnectionState('reconnecting');
-          onConnectionStateChange?.('reconnecting');
-          const delay = getReconnectDelay(prev);
-          reconnectTimerRef.current = setTimeout(() => {
-            createConnection(opts, true);
-          }, delay);
-          return next;
-        });
-      } else {
-        if (hasActiveTaskRef.current && e.code !== 1000 && !intentionalCloseRef.current) {
+      // On unexpected close during an active task, don't silently reconnect
+      // (reconnecting can't resume the pipeline — it's 1:1 per WS session).
+      // Instead, mark as failed so the user knows to check History for results.
+      if (!intentionalCloseRef.current && e.code !== 1000) {
+        if (hasActiveTaskRef.current) {
           setConnectionState('failed');
           onConnectionStateChange?.('failed');
+          hasActiveTaskRef.current = false;
         } else {
           setConnectionState('idle');
           onConnectionStateChange?.('idle');
         }
-        onClose?.(e.code, e.reason);
+      } else {
+        setConnectionState('idle');
+        onConnectionStateChange?.('idle');
       }
+      onClose?.(e.code, e.reason);
     };
-  }, [clearReconnectTimer]);
+  }, []);
 
   /**
    * Connect to the backend and start a task.
@@ -195,18 +165,16 @@ export function useWebSocket() {
   }) => {
     // Close existing connection
     intentionalCloseRef.current = true;
-    clearReconnectTimer();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
     intentionalCloseRef.current = false;
-    setReconnectAttempt(0);
 
     const opts = { apiBaseUrl, serverToken, task, files, configOverrides, onEvent, onError, onClose, onConnectionStateChange };
     lastConnectOptsRef.current = opts;
     createConnection(opts, false);
-  }, [createConnection, clearReconnectTimer]);
+  }, [createConnection]);
 
   const cancel = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -226,21 +194,18 @@ export function useWebSocket() {
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
-    clearReconnectTimer();
     hasActiveTaskRef.current = false;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
     setConnectionState('idle');
-    setReconnectAttempt(0);
     intentionalCloseRef.current = false;
-  }, [clearReconnectTimer]);
+  }, []);
 
-  /** Retry connection after failure — resets attempt counter */
+  /** Retry — re-run the last task from scratch */
   const retry = useCallback(() => {
     if (lastConnectOptsRef.current) {
-      setReconnectAttempt(0);
       setConnectionState('connecting');
       createConnection(lastConnectOptsRef.current, false);
     }
@@ -248,8 +213,7 @@ export function useWebSocket() {
 
   return {
     connect, cancel, respondConfirmation, disconnect, retry,
-    connectionState, reconnectAttempt,
-    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+    connectionState,
   };
 }
 

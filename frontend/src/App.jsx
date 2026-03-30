@@ -542,14 +542,10 @@ const InputBar = ({
 };
 
 // ─── ConnectionBanner ────────────────────────────────────────────────────────
-const ConnectionBanner = ({ connectionState, reconnectAttempt, maxReconnectAttempts, onRetry, t, isDark }) => {
+const ConnectionBanner = ({ connectionState, onRetry, t, isDark }) => {
   const configs = {
     connecting: { bg: 'rgba(74,109,229,0.12)', border: 'rgba(74,109,229,0.3)', color: '#4a6de5', text: 'Connecting to server...' },
-    reconnecting: {
-      bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b',
-      text: `Connection lost. Reconnecting (attempt ${reconnectAttempt}/${maxReconnectAttempts})...`,
-    },
-    failed: { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', color: '#ef4444', text: 'Connection failed. Check server and try again.' },
+    failed: { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', color: '#ef4444', text: 'Connection lost. Task may still be running — check History for results.' },
   };
   const cfg = configs[connectionState];
   if (!cfg) return null;
@@ -566,9 +562,6 @@ const ConnectionBanner = ({ connectionState, reconnectAttempt, maxReconnectAttem
       animation: 'hydra-slide-down 0.3s ease-out',
     }}>
       {connectionState === 'connecting' && (
-        <div style={{ width: 14, height: 14, border: `2px solid ${cfg.color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'hydra-spin 0.8s linear infinite' }} />
-      )}
-      {connectionState === 'reconnecting' && (
         <div style={{ width: 14, height: 14, border: `2px solid ${cfg.color}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'hydra-spin 0.8s linear infinite' }} />
       )}
       <span>{cfg.text}</span>
@@ -593,7 +586,7 @@ const TOAST_TYPES = {
   info:    { bg: 'rgba(74,109,229,0.15)', border: 'rgba(74,109,229,0.3)', color: '#4a6de5', icon: 'ℹ' },
 };
 
-let toastIdCounter = 0;
+let toastIdCounter = Date.now(); // Unique seed survives HMR
 
 function useToasts() {
   const [toasts, setToasts] = useState([]);
@@ -751,7 +744,7 @@ export default function App() {
 
   // WebSocket
   const { connect, cancel, respondConfirmation, disconnect, retry,
-    connectionState, reconnectAttempt, maxReconnectAttempts } = useWebSocket();
+    connectionState } = useWebSocket();
 
   // Toasts
   const { toasts, addToast, removeToast } = useToasts();
@@ -911,10 +904,8 @@ export default function App() {
           }
         },
         onConnectionStateChange: (state) => {
-          if (state === 'reconnecting') {
-            addToast('Connection lost. Attempting to reconnect...', 'warning');
-          } else if (state === 'failed') {
-            addToast('Connection failed. Check server status.', 'error');
+          if (state === 'failed') {
+            addToast('Connection lost. Check server status or try again.', 'error');
           }
         },
       });
@@ -1051,8 +1042,6 @@ export default function App() {
       {/* ── Connection banner ── */}
       <ConnectionBanner
         connectionState={connectionState}
-        reconnectAttempt={reconnectAttempt}
-        maxReconnectAttempts={maxReconnectAttempts}
         onRetry={retry}
         t={t}
         isDark={isDark}
@@ -1242,6 +1231,7 @@ export default function App() {
           taskText={currentTask}
           isDark={isDark}
           apiBaseUrl={settings.apiBaseUrl}
+          serverToken={settings.serverToken}
           onNewTask={handleNewTask}
           onRunAgain={() => {
             setInputValue(currentTask);

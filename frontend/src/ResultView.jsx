@@ -260,6 +260,7 @@ export default function ResultView({
   taskText,
   isDark,
   apiBaseUrl,
+  serverToken,
   onNewTask,
   onRunAgain,
   addToast,
@@ -405,7 +406,7 @@ export default function ResultView({
                 try {
                   const base = window.location.origin;
                   const headers = { 'Content-Type': 'application/json' };
-                  if (window.__hydraServerToken) headers['X-API-Key'] = window.__hydraServerToken;
+                  if (serverToken) headers['X-API-Key'] = serverToken;
                   const res = await fetch(`${base}/api/export/docx`, {
                     method: 'POST', headers,
                     body: JSON.stringify({
@@ -420,8 +421,10 @@ export default function ResultView({
                   const a = document.createElement('a');
                   a.href = url; a.download = 'Hydra Report.docx'; a.click();
                   URL.revokeObjectURL(url);
+                  addToast?.('DOCX exported successfully', 'success');
                 } catch (err) {
                   console.error('DOCX export failed:', err);
+                  addToast?.('DOCX export failed: ' + (err.message || 'Unknown error'), 'error');
                 }
               }} style={{
                 padding: '7px 12px', borderRadius: 8,
