@@ -17,9 +17,10 @@ const DEFAULT_SETTINGS = {
   apiKey: '',
   model: 'anthropic/claude-sonnet-4-6',
   brainModel: 'anthropic/claude-sonnet-4-6',
+  postBrainModel: 'anthropic/claude-sonnet-4-6',
   maxConcurrentAgents: 5,
   perAgentTimeout: 60,
-  totalTaskTimeout: 300,
+  totalTaskTimeout: 600,
   temperature: 0.4,
   qualityScoreThreshold: 5.0,
   outputDirectory: './hydra_output',
@@ -220,6 +221,18 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
           </datalist>
         </div>
 
+        <label style={labelStyle}>Synthesis Model</label>
+        <div style={fieldWrapStyle(false)}>
+          <input
+            list="post-brain-model-options" value={settings.postBrainModel}
+            onChange={e => onSettingChange('postBrainModel', e.target.value)}
+            style={inputStyle()}
+          />
+          <datalist id="post-brain-model-options">
+            {MODEL_OPTIONS.map(m => <option key={m} value={m} />)}
+          </datalist>
+        </div>
+
         <GlassSlider t={t} label="Temperature" value={settings.temperature}
           onChange={v => onSettingChange('temperature', v)} min={0} max={2} step={0.1}
           displayValue={settings.temperature.toFixed(1)} />
@@ -233,7 +246,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         <GlassSlider t={t} label="Per Agent Timeout (s)" value={settings.perAgentTimeout}
           onChange={v => onSettingChange('perAgentTimeout', v)} min={10} max={300} />
         <GlassSlider t={t} label="Total Task Timeout (s)" value={settings.totalTaskTimeout}
-          onChange={v => onSettingChange('totalTaskTimeout', v)} min={60} max={600} />
+          onChange={v => onSettingChange('totalTaskTimeout', v)} min={60} max={1200} />
       </div>
 
       {/* Quality */}
@@ -688,7 +701,7 @@ export default function App() {
   // Load recent tasks on home page
   useEffect(() => {
     if (appState === 'IDLE' && settings.apiBaseUrl) {
-      fetchHistory(settings.apiBaseUrl, settings.serverToken, 5)
+      fetchHistory(settings.serverToken, 5)
         .then(setRecentRuns)
         .catch(() => {}); // silent fail
     }
@@ -736,6 +749,7 @@ export default function App() {
         api_key: settings.apiKey || undefined,
         default_model: settings.model || undefined,
         brain_model: settings.brainModel || undefined,
+        post_brain_model: settings.postBrainModel || undefined,
         max_concurrent_agents: settings.maxConcurrentAgents,
         per_agent_timeout_seconds: settings.perAgentTimeout,
         total_task_timeout_seconds: settings.totalTaskTimeout,
@@ -805,7 +819,7 @@ export default function App() {
           let uploadedFiles = [];
           if (filesToUpload.length > 0 && settings.apiBaseUrl) {
             try {
-              uploadedFiles = await uploadFiles(settings.apiBaseUrl, filesToUpload, settings.serverToken);
+              uploadedFiles = await uploadFiles(filesToUpload, settings.serverToken);
               // Issue #2: set 100% only after real upload succeeds
               setFiles(prev => prev.map(f => ({ ...f, progress: 100 })));
             } catch (err) {
@@ -863,7 +877,7 @@ export default function App() {
   const handleOpenRecentTask = useCallback(async (run) => {
     if (!settings.apiBaseUrl) return;
     try {
-      const full = await fetchHistoryRun(settings.apiBaseUrl, settings.serverToken, run.task_id);
+      const full = await fetchHistoryRun(settings.serverToken, run.task_id);
       setResult(full.result || full);
       setCurrentTask(full.task_text || run.task_text || '');
       setAppState('RESULT');

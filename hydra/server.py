@@ -441,9 +441,9 @@ async def ws_task(websocket: WebSocket) -> None:
     # Auth via first message (not query param — query params are logged by proxies)
     if cfg.server_token:
         try:
-            raw_auth = await websocket.receive_text()
+            raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=10)
             auth_msg = json.loads(raw_auth)
-        except Exception:
+        except (asyncio.TimeoutError, Exception):
             await websocket.close(code=4001)
             return
         if auth_msg.get("type") != "auth" or auth_msg.get("token") != cfg.server_token:
@@ -500,8 +500,8 @@ async def ws_task(websocket: WebSocket) -> None:
         return result
 
     try:
-        # Wait for first message to start the task
-        raw = await websocket.receive_text()
+        # Wait for first message to start the task (30s timeout — client should send immediately)
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=30)
         msg = json.loads(raw)
 
         if msg.get("type") != "start_task":

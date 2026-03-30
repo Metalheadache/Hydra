@@ -115,7 +115,7 @@ export default function HistoryPage({
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchHistory(apiBaseUrl, serverToken, 20);
+      const data = await fetchHistory(serverToken, 20);
       setRuns(data);
     } catch (err) {
       setError(err.message);
@@ -134,7 +134,7 @@ export default function HistoryPage({
     // Issue #13: track which specific card is loading
     setLoadingId(run.task_id);
     try {
-      const full = await fetchHistoryRun(apiBaseUrl, serverToken, run.task_id);
+      const full = await fetchHistoryRun(serverToken, run.task_id);
       onOpenResult(full);
     } catch (err) {
       setError(err.message);
@@ -146,7 +146,7 @@ export default function HistoryPage({
 
   const handleDelete = useCallback(async (taskId) => {
     try {
-      await deleteHistoryRun(apiBaseUrl, serverToken, taskId);
+      await deleteHistoryRun(serverToken, taskId);
       setRuns(prev => prev.filter(r => r.task_id !== taskId));
     } catch (err) {
       setError(err.message);

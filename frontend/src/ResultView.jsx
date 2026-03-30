@@ -525,7 +525,7 @@ export default function ResultView({
                     {typeof filePath === 'string' ? filePath : filePath?.original_name || filePath?.filepath || JSON.stringify(filePath)}
                   </span>
                   <a
-                    href={buildDownloadUrl(apiBaseUrl, typeof filePath === 'string' ? filePath : filePath?.filepath)}
+                    href={buildDownloadUrl(typeof filePath === 'string' ? filePath : filePath?.filepath)}
                     download
                     style={{
                       padding: '6px 12px', borderRadius: 8,

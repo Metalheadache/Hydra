@@ -573,7 +573,7 @@ export default function OrchestrationView({
             role: spec.role,
             status: 'pending',
             tokensUsed: 0,
-            estimatedTokens: p.sub_tasks?.find(st => st.id === spec.sub_task_id)?.estimated_tokens || 2000,
+            estimatedTokens: Array.isArray(p.sub_tasks) ? (p.sub_tasks.find(st => st.id === spec.sub_task_id)?.estimated_tokens || 2000) : 2000,
             executionTimeMs: 0,
             qualityScore: null,
             currentTool: null,
