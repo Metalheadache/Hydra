@@ -63,7 +63,7 @@ class HydraEvent(BaseModel):
     sub_task_id: str | None = None
     group_index: int | None = None
     tokens: int | None = None
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
 
 
 class EventBus:

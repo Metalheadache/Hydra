@@ -220,9 +220,25 @@ class FileProcessor:
         Process a list of file paths. Returns FileAttachment objects with extracted text.
 
         Files that don't exist are handled gracefully (FileAttachment with error hint).
+        Path traversal is blocked — only files within CWD, upload_dir, or output_dir are allowed.
         """
+        allowed_roots = [
+            self.upload_dir.resolve(),
+            self.output_dir.resolve(),
+            Path.cwd().resolve(),
+        ]
         results: list[FileAttachment] = []
         for f in files:
+            resolved = Path(f).resolve()
+            if not any(resolved.is_relative_to(root) for root in allowed_roots):
+                logger.warning("file_path_rejected", filepath=str(f), reason="outside allowed directories")
+                results.append(FileAttachment(
+                    filepath=str(f),
+                    original_name=Path(f).name,
+                    mime_type=None,
+                    extracted_text=None,
+                ))
+                continue
             attachment = await self._process_single_path(Path(f))
             results.append(attachment)
         return results

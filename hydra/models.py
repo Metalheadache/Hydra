@@ -35,7 +35,7 @@ class SubTask(BaseModel):
     description: str
     expected_output: str           # Description of what this sub-task should produce
     output_schema: dict | None = None  # JSON Schema for output validation
-    dependencies: list[str] = []   # IDs of sub-tasks that must complete first
+    dependencies: list[str] = Field(default_factory=list)   # IDs of sub-tasks that must complete first
     priority: Priority = Priority.NORMAL
     estimated_tokens: int = 2000
     retry_allowed: bool = True
@@ -51,7 +51,7 @@ class AgentSpec(BaseModel):
     backstory: str                 # Persona framing for the LLM
     tools_needed: list[str]        # Tool names from registry
     output_schema: dict | None = None
-    constraints: list[str] = []    # e.g. ["Only cite .gov.cn sources", "Max 2000 tokens"]
+    constraints: list[str] = Field(default_factory=list)    # e.g. ["Only cite .gov.cn sources", "Max 2000 tokens"]
     temperature: float = 0.4
     model: str | None = None       # Override default model if needed
 
