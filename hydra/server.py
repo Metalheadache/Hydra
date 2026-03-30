@@ -34,6 +34,15 @@ from hydra.file_processor import FileProcessor
 from hydra.history import HistoryDB
 from hydra import Hydra
 
+# DOCX export (lazy import — only loaded when /api/export/docx is called)
+try:
+    from docx import Document as DocxDocument
+    from docx.shared import Pt as DocxPt
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    _HAS_DOCX = True
+except ImportError:
+    _HAS_DOCX = False
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -387,19 +396,16 @@ async def export_docx(body: dict) -> Any:
     Convert synthesis text (markdown) to a .docx file and return it for download.
     Body: { "title": "...", "content": "...", "metadata": { ... } }
     """
-    import asyncio
-    from docx import Document
-    from docx.shared import Pt, Inches
-    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-    import io
-    from starlette.responses import Response
+    if not _HAS_DOCX:
+        raise HTTPException(status_code=501, detail="DOCX export unavailable: python-docx not installed")
 
     title = body.get("title", "Hydra Report")
     content = body.get("content", "")
     metadata = body.get("metadata", {})
 
     def _build_docx() -> bytes:
-        doc = Document()
+        import io
+        doc = DocxDocument()
 
         # Title
         heading = doc.add_heading(title, level=0)
@@ -416,7 +422,7 @@ async def export_docx(body: dict) -> Any:
                 meta_parts.append(f"Agents: {metadata['agents']}")
             if meta_parts:
                 meta_para = doc.add_paragraph(" | ".join(meta_parts))
-                meta_para.style.font.size = Pt(9)
+                meta_para.style.font.size = DocxPt(9)
                 meta_para.style.font.italic = True
 
         doc.add_paragraph("")  # spacer

@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import re
 import shlex
+import os
 import shutil
 import subprocess
 import sys
@@ -85,7 +86,7 @@ class RunPythonTool(BaseTool):
         # NOTE: Network access is not restricted at the OS level. The code subprocess
         # can freely make network calls. For true isolation, run in a container
         # with --network none or use seccomp/namespaces.
-        import os as _os
+        # (os imported at module level)
         tmp_dir = tempfile.mkdtemp(prefix="hydra_python_")
         try:
             script_path = Path(tmp_dir) / "script.py"
@@ -134,8 +135,8 @@ class RunPythonTool(BaseTool):
             stderr_text = stderr.decode("utf-8", errors="replace")
 
             # H4: Copy created files to output_directory before temp dir is cleaned up
-            import os as _os
-            output_dir = Path(_os.environ.get("HYDRA_OUTPUT_DIRECTORY", "./hydra_output"))
+            # (os imported at module level)
+            output_dir = Path(os.environ.get("HYDRA_OUTPUT_DIRECTORY", "./hydra_output"))
             output_dir.mkdir(parents=True, exist_ok=True)
             created_files_paths: list[str] = []
             for fname in created_files:
@@ -250,8 +251,8 @@ class RunShellTool(BaseTool):
 
         try:
             # M3: Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
-            import os as _os
-            safe_cwd = _os.environ.get("HYDRA_OUTPUT_DIRECTORY", "/tmp")
+            # (os imported at module level)
+            safe_cwd = os.environ.get("HYDRA_OUTPUT_DIRECTORY", "/tmp")
             # Use create_subprocess_exec (not shell=True) to avoid shell interpretation
             proc = await asyncio.create_subprocess_exec(
                 *tokens,

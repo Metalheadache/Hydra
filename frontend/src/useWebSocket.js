@@ -46,7 +46,7 @@ export function useWebSocket() {
   /**
    * Internal: create a WebSocket connection. Used by both connect() and reconnect.
    */
-  const createConnection = useCallback((opts, isReconnect = false) => {
+  const createConnection = useCallback((opts) => {
     const {
       serverToken,
       task,
@@ -58,10 +58,8 @@ export function useWebSocket() {
       onConnectionStateChange,
     } = opts;
 
-    if (!isReconnect) {
-      setConnectionState('connecting');
-      onConnectionStateChange?.('connecting');
-    }
+    setConnectionState('connecting');
+    onConnectionStateChange?.('connecting');
 
     const url = buildWsUrl();
     let ws;
@@ -81,22 +79,18 @@ export function useWebSocket() {
     ws.onopen = () => {
       try {
         setConnectionState('connected');
-        setReconnectAttempt(0);
         onConnectionStateChange?.('connected');
 
         if (serverToken) {
           ws.send(JSON.stringify({ type: 'auth', token: serverToken }));
         }
-        // Only send start_task on initial connect, not reconnect
-        if (!isReconnect) {
-          hasActiveTaskRef.current = true;
-          ws.send(JSON.stringify({
-            type: 'start_task',
-            task,
-            files: files.length > 0 ? files : null,
-            config_overrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
-          }));
-        }
+        hasActiveTaskRef.current = true;
+        ws.send(JSON.stringify({
+          type: 'start_task',
+          task,
+          files: files.length > 0 ? files : null,
+          config_overrides: Object.keys(configOverrides).length > 0 ? configOverrides : undefined,
+        }));
         pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }));
@@ -173,7 +167,7 @@ export function useWebSocket() {
 
     const opts = { apiBaseUrl, serverToken, task, files, configOverrides, onEvent, onError, onClose, onConnectionStateChange };
     lastConnectOptsRef.current = opts;
-    createConnection(opts, false);
+    createConnection(opts);
   }, [createConnection]);
 
   const cancel = useCallback(() => {
@@ -207,7 +201,7 @@ export function useWebSocket() {
   const retry = useCallback(() => {
     if (lastConnectOptsRef.current) {
       setConnectionState('connecting');
-      createConnection(lastConnectOptsRef.current, false);
+      createConnection(lastConnectOptsRef.current);
     }
   }, [createConnection]);
 
@@ -272,9 +266,7 @@ export async function deleteHistoryRun(serverToken, taskId) {
 
 /**
  * Download file URL builder.
- * TODO: The backend /api/download endpoint does not exist yet.
- * Files are served from output_dir on the server.
- * Using /api/files/ as a placeholder until the endpoint is implemented.
+ * Files are served from output_dir via GET /api/files/{path}.
  */
 export function buildDownloadUrl(filePath) {
   const base = buildRestUrl();
