@@ -9,6 +9,7 @@ EventBus is optional everywhere — all components guard emits with
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from enum import Enum
 from typing import Any, AsyncGenerator, Awaitable, Callable
@@ -66,6 +67,9 @@ class HydraEvent(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+logger = logging.getLogger(__name__)
+
+
 class EventBus:
     """
     Central event dispatcher. Components emit events; listeners receive them.
@@ -86,9 +90,23 @@ class EventBus:
         self._has_stream_consumer: bool = False
         self._pending_tasks: set[asyncio.Task] = set()
 
+        # Telemetry counters
+        self._events_emitted: int = 0
+        self._events_dropped: int = 0
+        self._events_delivered: int = 0
+
         # Confirmation gate state
         self._pending_confirmations: dict[str, asyncio.Event] = {}
         self._confirmation_responses: dict[str, bool] = {}
+
+    @property
+    def stats(self) -> dict[str, int]:
+        """Telemetry snapshot: emitted, delivered, dropped counts."""
+        return {
+            "emitted": self._events_emitted,
+            "delivered": self._events_delivered,
+            "dropped": self._events_dropped,
+        }
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -123,13 +141,17 @@ class EventBus:
             task.add_done_callback(self._pending_tasks.discard)
 
         # Push to queue for stream() — only when a consumer exists
+        self._events_emitted += 1
         if self._has_stream_consumer:
             try:
                 self._queue.put_nowait(event)
             except asyncio.QueueFull:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "EventBus queue full (maxsize=10000); discarding event type=%s", event.type
+                self._events_dropped += 1
+                logger.warning(
+                    "eventbus_queue_full",
+                    event_type=str(event.type),
+                    dropped_total=self._events_dropped,
+                    emitted_total=self._events_emitted,
                 )
 
     async def drain(self) -> None:
@@ -140,16 +162,25 @@ class EventBus:
     async def close(self) -> None:
         """Signal stream() consumers to stop by pushing a sentinel."""
         await self.drain()
-        # If queue is full, drain items to make room for sentinel
-        while self._queue.full():
+        # If queue is full, drop exactly one event to make room for sentinel
+        if self._queue.full():
             try:
                 self._queue.get_nowait()
+                self._events_dropped += 1
+                logger.debug("eventbus_close_drop", reason="making room for sentinel")
             except asyncio.QueueEmpty:
-                break
+                pass
         try:
             self._queue.put_nowait(None)  # sentinel — non-blocking
         except asyncio.QueueFull:
             pass  # consumer already gone, sentinel not needed
+        if self._events_dropped > 0:
+            logger.info(
+                "eventbus_closed",
+                emitted=self._events_emitted,
+                delivered=self._events_delivered,
+                dropped=self._events_dropped,
+            )
         self._has_stream_consumer = False
 
     # ── Streaming ─────────────────────────────────────────────────────────────
@@ -168,6 +199,7 @@ class EventBus:
                 event = await self._queue.get()
                 if event is None:
                     break
+                self._events_delivered += 1
                 yield event
         finally:
             self._has_stream_consumer = False
