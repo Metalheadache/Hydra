@@ -145,7 +145,8 @@ async def verify_token(request: Request) -> None:
     """
     if not _config.server_token:
         return  # auth not configured — open access
-    token = request.headers.get("X-API-Key") or request.query_params.get("token")
+    # Header-only auth — query params are logged by proxies and leak in server logs
+    token = request.headers.get("X-API-Key")
     if token != _config.server_token:
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
 
@@ -290,6 +291,12 @@ async def upload_files(files: list[UploadFile]) -> list[dict]:
         raise HTTPException(status_code=400, detail="No files provided.")
 
     cfg = _config  # snapshot for consistent reads during this request
+
+    if len(files) > cfg.max_upload_files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many files ({len(files)}). Maximum is {cfg.max_upload_files}.",
+        )
     processor = FileProcessor(cfg.output_directory)
     results = []
     max_bytes = cfg.max_upload_file_size_mb * 1024 * 1024
@@ -310,6 +317,9 @@ async def upload_files(files: list[UploadFile]) -> list[dict]:
             chunks.append(chunk)
         content = b"".join(chunks)
         filename = upload.filename or "unnamed"
+        # Reject filenames with null bytes or control characters
+        if '\x00' in filename or any(ord(c) < 32 for c in filename):
+            raise HTTPException(status_code=400, detail=f"Invalid filename: contains null or control characters.")
         try:
             attachment = await processor.process_upload(filename, content)
         except ValueError as exc:

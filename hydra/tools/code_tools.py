@@ -122,10 +122,11 @@ class RunPythonTool(BaseTool):
                 )
 
             # Collect any files created (excluding the script itself)
+            # Security: skip symlinks to prevent exfiltration of sensitive files
             created_files = [
                 p.name
                 for p in Path(tmp_dir).iterdir()
-                if p.name != "script.py" and p.is_file()
+                if p.name != "script.py" and p.is_file() and not p.is_symlink()
             ]
 
             exit_code = proc.returncode
@@ -233,6 +234,19 @@ class RunShellTool(BaseTool):
                     f"Allowed commands: {', '.join(sorted(_ALLOWED_SHELL_COMMANDS))}"
                 ),
             )
+
+        # Security: block absolute paths and parent traversal in arguments
+        # Prevents reading arbitrary host files (e.g., "cat /etc/passwd")
+        for arg in tokens[1:]:
+            if arg.startswith("/") or ".." in arg:
+                logger.warning("shell_path_blocked", command=command, arg=arg)
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Absolute paths and '..' traversal are not allowed in shell arguments. "
+                        f"Blocked argument: '{arg}'"
+                    ),
+                )
 
         try:
             # M3: Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
