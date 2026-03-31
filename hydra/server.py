@@ -149,8 +149,7 @@ async def verify_token(request: Request) -> None:
     """
     FastAPI dependency for optional token-based authentication.
     If HydraConfig.server_token is empty, auth is disabled.
-    Otherwise, the client must supply the token via X-API-Key header
-    or ?token= query parameter.
+    Otherwise, the client must supply the token via X-API-Key header.
     """
     if not _config.server_token:
         return  # auth not configured — open access
@@ -524,7 +523,7 @@ async def ws_task(websocket: WebSocket) -> None:
         {"type": "confirmation_response", "confirmation_id": "...", "approved": true}
         {"type": "cancel"}
 
-    Optional auth: pass ?token=<server_token> as query param when HYDRA_SERVER_TOKEN is set.
+    Optional auth: when HYDRA_SERVER_TOKEN is set, WS auth is via first message {"type": "auth", "token": "..."}.
     """
     await websocket.accept()
 
