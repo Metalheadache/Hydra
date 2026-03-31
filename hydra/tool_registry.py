@@ -67,6 +67,10 @@ class ToolRegistry:
             PdfReaderTool,
         )
         from hydra.tools.language_tools import TranslationTool, SummarizerTool
+        from hydra.tools.reader_tools import ReadDocxTool, ReadXlsxTool, ReadCsvTool, ReadCodeTool
+        from hydra.tools.file_manager_tools import FileManagerTool, FileMoveTool, FileDeleteTool
+        from hydra.tools.template_tools import TemplateRenderTool
+        from hydra.tools.pdf_tools import PdfMergeTool, PdfSplitTool
 
         output_dir = config.output_directory if config is not None else "./hydra_output"
 
@@ -101,6 +105,20 @@ class ToolRegistry:
             # Language tools
             TranslationTool(config=config),
             SummarizerTool(config=config),
+            # Reader tools (output_dir for allowed_roots path validation)
+            ReadDocxTool(output_dir=output_dir),
+            ReadXlsxTool(output_dir=output_dir),
+            ReadCsvTool(output_dir=output_dir),
+            ReadCodeTool(output_dir=output_dir),
+            # File management
+            FileManagerTool(output_dir=output_dir),
+            FileMoveTool(output_dir=output_dir),
+            FileDeleteTool(output_dir=output_dir),
+            # Templates
+            TemplateRenderTool(output_dir=output_dir),
+            # PDF operations
+            PdfMergeTool(output_dir=output_dir),
+            PdfSplitTool(output_dir=output_dir),
         ])
         logger.info("default_tools_registered", count=len(self._tools))
 

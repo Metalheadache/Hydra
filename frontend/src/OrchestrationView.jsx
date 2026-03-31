@@ -473,6 +473,7 @@ export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog }) =
 const TOOL_RISK = {
   run_python: 'high', run_shell: 'high',
   http_request: 'medium', web_fetch: 'medium',
+  file_move: 'medium', file_delete: 'high',
 };
 
 const RISK_CONFIG = {
@@ -512,6 +513,20 @@ const TOOL_DESCRIPTIONS = {
   // Validation
   output_validator: 'Validate data against a JSON Schema',
   quality_scorer: 'LLM-based quality scoring (1-10)',
+  // Readers
+  read_docx: 'Read a Word document with structured extraction',
+  read_xlsx: 'Read an Excel spreadsheet with column stats',
+  read_csv: 'Read a CSV/TSV file with auto-detection',
+  read_code: 'Read source code with line numbers and structure',
+  // File management
+  file_manager: 'List, copy, zip, unzip, find files and directories',
+  file_move: 'Move or rename a file or directory',
+  file_delete: 'Delete a file or directory',
+  // Templates
+  template_render: 'Render a Jinja2 template with data',
+  // PDF operations
+  pdf_merge: 'Merge multiple PDFs into one',
+  pdf_split: 'Split a PDF into multiple files',
 };
 
 const CODE_KEYS = new Set(['code', 'script', 'command', 'cmd', 'query', 'body', 'python', 'shell']);
