@@ -498,7 +498,8 @@ hydra.tool_registry.register(MyTool())
 - [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
 - [x] Human-in-the-loop confirmation modal (queue, risk badges, auto-timeout, timeline)
 - [x] Tool expansion: 22 → 32 tools (readers, file manager, templates, PDF ops)
-- [ ] Settings: test connection, brain strategy selector, cost estimation
+- [x] Settings: search config, test connection, validation, backend sync
+- [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
 - [ ] Data classification / sensitivity routing
 - [ ] Responsive polish (mobile/tablet/desktop)
 
