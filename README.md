@@ -18,7 +18,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🔄 **Retry + Quality Gate** — Failed agents retry with exponential backoff; LLM quality scoring (1-10) with automatic re-dispatch
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
 - 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
-- 🔧 **22 Built-in Tools** — Document generation, research, data analysis, code execution, memory, translation, validation
+- 🔧 **32 Built-in Tools** — Document generation, file reading, file management, research, data analysis, code execution, memory, translation, templates, PDF operations, validation
 - 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval with risk badges, keyboard shortcuts, auto-timeout, and confirmation queue
 - 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
 - 🌐 **FastAPI Backend** — REST + WebSocket API with task history, file upload, optional auth token
@@ -295,7 +295,7 @@ Token budgeting prevents context overflow. Long outputs are truncated with refer
 
 ---
 
-## Built-in Tools (22)
+## Built-in Tools (32)
 
 ### 📄 File Writing
 | Tool | Description |
@@ -312,6 +312,21 @@ Token budgeting prevents context overflow. Long outputs are truncated with refer
 | `write_xlsx` | Excel (multi-sheet, auto-width, freeze, filters) |
 | `write_pptx` | PowerPoint (title/content/blank slides, speaker notes) |
 | `read_pdf` | Extract text from PDF files |
+
+### 📖 File Reading
+| Tool | Description |
+|---|---|
+| `read_docx` | Read Word documents — text with heading structure, tables, metadata |
+| `read_xlsx` | Read Excel workbooks — structured data, column stats, multi-sheet |
+| `read_csv` | Read CSV/TSV — auto-detect encoding (utf-8/gb18030) and delimiter |
+| `read_code` | Read source code — line numbers, language detection, structure map |
+
+### 🗂️ File Management
+| Tool | Description |
+|---|---|
+| `file_manager` | List, tree, info, find, copy, zip, unzip, mkdir |
+| `file_move` | Move/rename files (requires confirmation) |
+| `file_delete` | Delete files/dirs (requires confirmation) |
 
 ### 🔍 Research & Web
 | Tool | Description |
@@ -344,6 +359,17 @@ Token budgeting prevents context overflow. Long outputs are truncated with refer
 |---|---|
 | `translate` | LLM-powered translation (any language pair, 16K tokens) |
 | `summarize` | Summarize text (bullets/paragraph/executive, 8K tokens) |
+
+### 📝 Templates
+| Tool | Description |
+|---|---|
+| `template_render` | Jinja2 template rendering with sandbox security |
+
+### 📑 PDF Operations
+| Tool | Description |
+|---|---|
+| `pdf_merge` | Merge multiple PDFs with page ranges and bookmarks |
+| `pdf_split` | Split PDF by pages, chunks, or one-per-page |
 
 ### ✅ Validation
 | Tool | Description |
@@ -471,6 +497,7 @@ hydra.tool_registry.register(MyTool())
 - [x] Export: clipboard + PDF + DOCX
 - [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
 - [x] Human-in-the-loop confirmation modal (queue, risk badges, auto-timeout, timeline)
+- [x] Tool expansion: 22 → 32 tools (readers, file manager, templates, PDF ops)
 - [ ] Settings: test connection, brain strategy selector, cost estimation
 - [ ] Data classification / sensitivity routing
 - [ ] Responsive polish (mobile/tablet/desktop)
