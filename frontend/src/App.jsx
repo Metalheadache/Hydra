@@ -419,7 +419,7 @@ const InputBar = ({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px';
     }
   }, [value]);
 
@@ -432,7 +432,7 @@ const InputBar = ({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      borderRadius: 999,
+      borderRadius: files.length > 3 || value.length > 100 ? 24 : 999,
       background: focused ? t.glassBgFocus : t.glassBgBase,
       backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
       border: `1px solid ${focused ? t.glassBorderFocus : t.glassBorder}`,
@@ -441,6 +441,7 @@ const InputBar = ({
         : `${t.glassHighlight}, 0 0 20px rgba(0,0,0,0.3)`,
       transition: 'all 0.4s cubic-bezier(0.16,1,0.3,1)',
       overflow: 'hidden',
+      maxHeight: 320,
       ...extraStyle,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '0 8px', minHeight: 52 }}>
@@ -531,7 +532,7 @@ const InputBar = ({
       </div>
 
       {files.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 10px 12px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 10px 12px', maxHeight: 120, overflowY: 'auto', scrollbarWidth: 'thin' }}>
           {files.map((f, i) => (
             <FileChip key={i} file={f} t={t} onRemove={() => onRemoveFile(i)} />
           ))}
@@ -1140,7 +1141,7 @@ export default function App() {
             ref={initialBarRef}
             className="hydra-idle-bar"
             style={{
-              width: inputFocused ? 560 : 480,
+              width: (inputFocused || files.length > 0 || inputValue.length > 50) ? 640 : 480,
               maxWidth: '90vw',
               transition: 'width 0.4s cubic-bezier(0.16,1,0.3,1)',
             }}>

@@ -1170,7 +1170,8 @@ export default function OrchestrationView({
     }}>
       {/* Task header */}
       <div style={{
-        padding: '16px 24px 16px 140px',
+        padding: '20px 24px 20px 140px',
+        minHeight: 48,
         display: 'flex', alignItems: 'center', gap: 12,
         background: isDark ? 'rgba(5,7,10,0.85)' : 'rgba(240,244,248,0.85)',
         backdropFilter: 'blur(20px)',
