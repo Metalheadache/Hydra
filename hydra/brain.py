@@ -84,7 +84,11 @@ class Brain:
                 data={"task_preview": task[:120]},
             ))
 
-        system_prompt = self._build_system_prompt(has_files=has_files)
+        custom_prompt = getattr(self.config, 'custom_brain_prompt', '')
+        if custom_prompt and custom_prompt.strip():
+            system_prompt = custom_prompt.strip()[:2000]
+        else:
+            system_prompt = self._build_system_prompt(has_files=has_files)
         user_message = f"Decompose this task into a complete execution plan:\n\n{task}"
 
         last_error: Exception | None = None

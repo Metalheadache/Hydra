@@ -253,6 +253,33 @@ async def update_config(body: dict) -> dict:
     return _redact_config(_config)
 
 
+# ── Test Connection ───────────────────────────────────────────────────────
+
+@app.post("/api/test-connection", dependencies=[Depends(verify_token)])
+async def test_connection(body: dict) -> dict:
+    """Test LLM provider connectivity with a minimal request."""
+    import litellm
+
+    model = body.get("model", _config.default_model)
+    api_key = body.get("api_key", _config.api_key)
+    api_base = body.get("api_base", _config.api_base)
+
+    start = time.time()
+    try:
+        response = await litellm.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=1,
+            api_key=api_key,
+            api_base=api_base,
+        )
+        latency = int((time.time() - start) * 1000)
+        return {"success": True, "latency_ms": latency, "model": model, "error": None}
+    except Exception as e:
+        latency = int((time.time() - start) * 1000)
+        return {"success": False, "latency_ms": latency, "model": model, "error": str(e)}
+
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/tools", dependencies=[Depends(verify_token)])

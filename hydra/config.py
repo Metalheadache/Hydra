@@ -61,6 +61,9 @@ class HydraConfig(BaseSettings):
     search_api_key: str = Field(default="", description="API key for web search (Brave/Tavily/SerpAPI).")
     search_backend: str = Field(default="brave", description="Search backend: brave | tavily | serpapi")
 
+    # ── Brain Override ────────────────────────────────────────────────────────
+    custom_brain_prompt: str = Field(default="", description="Optional override for Brain system prompt (max 2000 chars).")
+
     # ── Server Auth ───────────────────────────────────────────────────────────
     server_token: str = Field(
         default="",

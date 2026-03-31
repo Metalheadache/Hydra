@@ -265,6 +265,42 @@ export async function deleteHistoryRun(serverToken, taskId) {
 }
 
 /**
+ * Fetch server config (GET /api/config).
+ */
+export async function fetchConfig(serverToken) {
+  const base = buildRestUrl();
+  const headers = {};
+  if (serverToken) headers['X-API-Key'] = serverToken;
+  const res = await fetch(`${base}/api/config`, { headers });
+  if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Update server config (POST /api/config).
+ */
+export async function updateConfig(serverToken, updates) {
+  const base = buildRestUrl();
+  const headers = { 'Content-Type': 'application/json' };
+  if (serverToken) headers['X-API-Key'] = serverToken;
+  const res = await fetch(`${base}/api/config`, { method: 'POST', headers, body: JSON.stringify(updates) });
+  if (!res.ok) throw new Error(`Config save failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Test LLM connection (POST /api/test-connection).
+ */
+export async function testConnection(serverToken, body) {
+  const base = buildRestUrl();
+  const headers = { 'Content-Type': 'application/json' };
+  if (serverToken) headers['X-API-Key'] = serverToken;
+  const res = await fetch(`${base}/api/test-connection`, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`Test connection failed: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Download file URL builder.
  * Files are served from output_dir via GET /api/files/{path}.
  */

@@ -264,6 +264,7 @@ export default function ResultView({
   onNewTask,
   onRunAgain,
   addToast,
+  showCostEstimates = true,
 }) {
   const t = tokens(isDark);
   const [copied, setCopied] = useState(false);
@@ -369,7 +370,7 @@ export default function ResultView({
           {summary.agent_count > 0 && <span>🤖 {summary.agent_count} agents</span>}
           {summary.total_tokens > 0 && <span>🪙 {formatTokens(summary.total_tokens)}</span>}
           {summary.total_time_ms > 0 && <span>⏱ {formatElapsed(summary.total_time_ms)}</span>}
-          {summary.total_cost > 0 && <span>💰 {formatCost(summary.total_tokens)}</span>}
+          {showCostEstimates && summary.total_cost > 0 && <span>💰 {formatCost(summary.total_tokens)}</span>}
         </div>
 
         {/* Actions */}

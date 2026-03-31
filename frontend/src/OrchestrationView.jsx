@@ -410,7 +410,7 @@ export const SynthesisPanel = ({ text, isStreaming, isDark }) => {
 };
 
 // ─── StatusBar ────────────────────────────────────────────────────────────────
-export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog }) => {
+export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog, showCostEstimates = true }) => {
   const t = tokens(isDark);
   const [elapsed, setElapsed] = useState(0);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -438,7 +438,7 @@ export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog }) =
     }}>
       <span>\u23f1 {formatElapsed(elapsed)}</span>
       <span>\ud83e\ude99 {formatTokens(totalTokens)} tokens</span>
-      <span>\ud83d\udcb0 {formatCost(totalTokens)}</span>
+      {showCostEstimates && <span>\ud83d\udcb0 {formatCost(totalTokens)}</span>}
 
       {/* Confirmation timeline badge */}
       {confirmationLog && confirmationLog.length > 0 && (
@@ -815,6 +815,8 @@ export default function OrchestrationView({
   onConfirmationReject,
   connectionState,
   onRetryPipeline,
+  activeStrategy,
+  showCostEstimates,
 }) {
   const t = tokens(isDark);
 
@@ -1195,8 +1197,9 @@ export default function OrchestrationView({
         flexShrink: 0,
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: t.textSecondary, fontWeight: 500, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Active Task
+          <div style={{ fontSize: 11, color: t.textSecondary, fontWeight: 500, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span>Active Task</span>
+            {activeStrategy && <span style={{ color: isDark ? '#6B8AFF' : '#0025C9', fontWeight: 600 }}>{activeStrategy}</span>}
           </div>
           <div style={{
             fontSize: 14, fontWeight: 600, color: t.textPrimary,
@@ -1328,7 +1331,7 @@ export default function OrchestrationView({
       </div>
 
       {/* Status bar */}
-      <StatusBar startTime={startTime} totalTokens={totalTokens} isDark={isDark} confirmationLog={confirmationLog} />
+      <StatusBar startTime={startTime} totalTokens={totalTokens} isDark={isDark} confirmationLog={confirmationLog} showCostEstimates={showCostEstimates} />
 
       {/* Phase 4B: Confirmation modal — queue-aware */}
       {confirmationQueue.length > 0 && (

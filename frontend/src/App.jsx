@@ -3,7 +3,7 @@ import OrchestrationView from './OrchestrationView.jsx';
 import ResultView from './ResultView.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import { mockOrchestration } from './mockOrchestration.js';
-import { useWebSocket, uploadFiles, fetchHistory, fetchHistoryRun, normalizeError } from './useWebSocket.js';
+import { useWebSocket, uploadFiles, fetchHistory, fetchHistoryRun, fetchConfig, updateConfig, testConnection, normalizeError } from './useWebSocket.js';
 import {
   tokens,
   GearIcon, ClockIcon, PaperclipIcon, SendIcon, StopIcon,
@@ -24,7 +24,33 @@ const DEFAULT_SETTINGS = {
   temperature: 0.4,
   qualityScoreThreshold: 5.0,
   outputDirectory: './hydra_output',
+  searchBackend: 'brave',
+  searchApiKey: '',
+  customBrainPrompt: '',
+  showCostEstimates: true,
 };
+
+// ─── Strategy presets ────────────────────────────────────────────────────────
+const STRATEGY_PRESETS = {
+  balanced: { label: 'Balanced', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 5, perAgentTimeout: 60, totalTaskTimeout: 600, qualityScoreThreshold: 5.0 },
+  fast: { label: 'Fast', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 8, perAgentTimeout: 30, totalTaskTimeout: 300, qualityScoreThreshold: 3.0 },
+  high_quality: { label: 'High Quality', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 3, perAgentTimeout: 120, totalTaskTimeout: 900, qualityScoreThreshold: 7.0 },
+  cost_aware: { label: 'Cost Aware', model: 'deepseek/deepseek-chat', maxConcurrentAgents: 5, perAgentTimeout: 60, totalTaskTimeout: 600, qualityScoreThreshold: 4.0 },
+};
+
+function detectStrategy(settings) {
+  for (const [key, preset] of Object.entries(STRATEGY_PRESETS)) {
+    if (
+      settings.maxConcurrentAgents === preset.maxConcurrentAgents &&
+      settings.perAgentTimeout === preset.perAgentTimeout &&
+      settings.totalTaskTimeout === preset.totalTaskTimeout &&
+      settings.qualityScoreThreshold === preset.qualityScoreThreshold
+    ) return key;
+  }
+  return 'custom';
+}
+
+const SEARCH_BACKENDS = ['brave', 'tavily', 'serpapi', 'none'];
 
 const MODEL_OPTIONS = [
   'anthropic/claude-sonnet-4-6',
@@ -76,7 +102,7 @@ const GlassSlider = ({ value, onChange, min, max, step, label, displayValue, t }
 };
 
 // ─── SettingsPanel ────────────────────────────────────────────────────────────
-const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, t }) => {
+const SettingsPanel = ({ open, settings, onSettingChange, onBatchChange, isDark, onToggleDark, t, addToast, serverToken }) => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [modelInputFocused, setModelInputFocused] = useState(false);
   const [brainModelInputFocused, setBrainModelInputFocused] = useState(false);
@@ -86,23 +112,104 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
   const [serverTokenFocused, setServerTokenFocused] = useState(false);
   const [outputDirFocused, setOutputDirFocused] = useState(false);
   const [showServerToken, setShowServerToken] = useState(false);
+  const [showSearchKey, setShowSearchKey] = useState(false);
+  const [searchKeyFocused, setSearchKeyFocused] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+
+  // Test connection state
+  const [testResult, setTestResult] = useState(null); // {success, latency_ms, error} | null
+  const [testing, setTesting] = useState(false);
+
+  // Validation helpers
+  const apiKeyVal = (() => {
+    const k = settings.apiKey;
+    if (!k) return { level: 'warn', msg: 'API key is empty' };
+    if (k.length < 8) return { level: 'warn', msg: 'API key seems too short' };
+    return null;
+  })();
+  const apiBaseVal = (() => {
+    const u = settings.apiBaseUrl;
+    if (!u) return null;
+    try { new URL(u); return null; } catch { return { level: 'error', msg: 'Invalid URL format' }; }
+  })();
+  const timeoutVal = settings.totalTaskTimeout < settings.perAgentTimeout
+    ? { level: 'warn', msg: 'Total timeout is less than per-agent timeout' } : null;
+
+  const valColors = { warn: '#f59e0b', error: '#ef4444' };
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await testConnection(serverToken, {
+        model: settings.model,
+        api_key: settings.apiKey,
+        api_base: settings.apiBaseUrl || undefined,
+      });
+      setTestResult(res);
+    } catch (err) {
+      setTestResult({ success: false, latency_ms: 0, error: err.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // Clear test result on settings change
+  const prevModelRef = useRef(settings.model);
+  const prevKeyRef = useRef(settings.apiKey);
+  useEffect(() => {
+    if (settings.model !== prevModelRef.current || settings.apiKey !== prevKeyRef.current) {
+      setTestResult(null);
+      prevModelRef.current = settings.model;
+      prevKeyRef.current = settings.apiKey;
+    }
+  }, [settings.model, settings.apiKey]);
+
+  const activeStrategy = detectStrategy(settings);
+
+  const handleStrategyChange = (key) => {
+    if (key === 'custom') return;
+    const preset = STRATEGY_PRESETS[key];
+    onBatchChange({
+      model: preset.model,
+      maxConcurrentAgents: preset.maxConcurrentAgents,
+      perAgentTimeout: preset.perAgentTimeout,
+      totalTaskTimeout: preset.totalTaskTimeout,
+      qualityScoreThreshold: preset.qualityScoreThreshold,
+    });
+  };
 
   const inputStyle = () => ({
     width: '100%', background: 'transparent', border: 'none', outline: 'none',
     color: t.textPrimary, fontSize: 13, fontFamily: 'inherit',
   });
 
-  const fieldWrapStyle = (focused) => ({
+  const fieldWrapStyle = (focused, valLevel) => ({
     display: 'flex', alignItems: 'center', gap: 6,
-    padding: '8px 12px', borderRadius: 10, marginBottom: 8,
+    padding: '8px 12px', borderRadius: 10, marginBottom: valLevel ? 2 : 8,
     background: focused
       ? (isDark ? 'rgba(0,37,201,0.08)' : 'rgba(0,37,201,0.05)')
       : t.inputBg,
-    border: `1px solid ${focused ? 'rgba(160,230,255,0.5)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
+    border: `1px solid ${valLevel ? valColors[valLevel] + '80' : (focused ? 'rgba(160,230,255,0.5)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'))}`,
     backdropFilter: 'blur(10px)',
     transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
     boxShadow: focused ? '0 0 12px rgba(0,37,201,0.15)' : 'none',
   });
+
+  const valMsg = (val) => val ? (
+    <div style={{ fontSize: 10, color: valColors[val.level], marginBottom: 6, paddingLeft: 4 }}>{val.msg}</div>
+  ) : null;
+
+  const selectStyle = {
+    width: '100%', background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.6)',
+    border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+    borderRadius: 10, padding: '8px 12px', color: t.textPrimary, fontSize: 13,
+    fontFamily: 'inherit', outline: 'none', cursor: 'pointer',
+    appearance: 'none', WebkitAppearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
+    marginBottom: 8,
+  };
 
   const labelStyle = {
     fontSize: 11, color: t.textSecondary, fontWeight: 500,
@@ -114,6 +221,38 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
     marginBottom: 16, paddingBottom: 16,
     borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
   };
+
+  const toggleStyle = (active, hovered) => ({
+    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+    borderRadius: 14, cursor: 'pointer', width: '100%',
+    background: hovered
+      ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)')
+      : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)'),
+    border: `1px solid ${hovered
+      ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')
+      : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
+    transition: 'all 0.3s ease',
+  });
+
+  const ToggleSwitch = ({ active }) => (
+    <div style={{
+      width: 44, height: 24, borderRadius: 12, position: 'relative',
+      background: active ? 'rgba(0,37,201,0.25)' : 'rgba(0,0,0,0.12)',
+      border: `1px solid ${active ? '#0025C9' : 'rgba(0,0,0,0.12)'}`,
+      transition: 'all 0.3s ease', flexShrink: 0,
+    }}>
+      <div style={{
+        position: 'absolute', top: 3,
+        left: active ? 'calc(100% - 19px)' : 3,
+        width: 16, height: 16, borderRadius: '50%',
+        background: active ? '#4a7aff' : '#94a3b8',
+        boxShadow: active ? '0 0 10px rgba(0,37,201,0.6)' : 'none',
+        transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
+      }} />
+    </div>
+  );
+
+  const [hoveredCostToggle, setHoveredCostToggle] = useState(false);
 
   return (
     <div style={{
@@ -143,7 +282,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>API Configuration</span>
 
         <label style={labelStyle}>API Base URL</label>
-        <div style={fieldWrapStyle(apiUrlFocused)}>
+        <div style={fieldWrapStyle(apiUrlFocused, apiBaseVal?.level)}>
           <input
             type="text" value={settings.apiBaseUrl}
             placeholder="http://localhost:8000"
@@ -153,6 +292,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             style={inputStyle()}
           />
         </div>
+        {valMsg(apiBaseVal)}
 
         <label style={labelStyle}>Server Token (optional)</label>
         <div style={fieldWrapStyle(serverTokenFocused)}>
@@ -172,7 +312,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         </div>
 
         <label style={labelStyle}>LLM API Key</label>
-        <div style={fieldWrapStyle(apiKeyFocused)}>
+        <div style={fieldWrapStyle(apiKeyFocused, apiKeyVal?.level)}>
           <input
             type={showApiKey ? 'text' : 'password'}
             value={settings.apiKey}
@@ -187,6 +327,126 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
             {showApiKey ? <EyeOffIcon size={16} color={t.textSecondary} /> : <EyeIcon size={16} color={t.textSecondary} />}
           </button>
         </div>
+        {valMsg(apiKeyVal)}
+
+        {/* Test Connection */}
+        <button
+          onClick={handleTestConnection}
+          disabled={testing}
+          style={{
+            width: '100%', padding: '8px 14px', borderRadius: 10, cursor: testing ? 'default' : 'pointer',
+            background: testing ? 'rgba(74,109,229,0.08)' : 'rgba(74,109,229,0.12)',
+            border: '1px solid rgba(74,109,229,0.3)',
+            color: '#4a6de5', fontSize: 12, fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'all 0.2s ease', marginBottom: 4,
+          }}
+        >
+          {testing ? (
+            <>
+              <div style={{ width: 12, height: 12, border: '2px solid #4a6de5', borderTopColor: 'transparent', borderRadius: '50%', animation: 'hydra-spin 0.8s linear infinite' }} />
+              Testing...
+            </>
+          ) : 'Test Connection'}
+        </button>
+        {testResult && (
+          <div style={{
+            fontSize: 11, padding: '6px 8px', borderRadius: 6, marginBottom: 4,
+            background: testResult.success ? 'rgba(74,222,128,0.1)' : 'rgba(239,68,68,0.1)',
+            color: testResult.success ? '#4ade80' : '#ef4444',
+          }}>
+            {testResult.success
+              ? `Connected — ${testResult.latency_ms}ms latency`
+              : `Failed: ${testResult.error}`}
+          </div>
+        )}
+      </div>
+
+      {/* Search Config */}
+      <div style={sectionStyle}>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Search Configuration</span>
+
+        <label style={labelStyle}>Search Backend</label>
+        <select
+          value={settings.searchBackend}
+          onChange={e => onSettingChange('searchBackend', e.target.value)}
+          style={selectStyle}
+        >
+          {SEARCH_BACKENDS.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+
+        <label style={labelStyle}>Search API Key</label>
+        <div style={fieldWrapStyle(searchKeyFocused)}>
+          <input
+            type={showSearchKey ? 'text' : 'password'}
+            value={settings.searchApiKey}
+            placeholder="Search provider API key..."
+            onChange={e => onSettingChange('searchApiKey', e.target.value)}
+            onFocus={() => setSearchKeyFocused(true)}
+            onBlur={() => setSearchKeyFocused(false)}
+            style={{ ...inputStyle(), flex: 1 }}
+          />
+          <button onClick={() => setShowSearchKey(p => !p)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textSecondary, display: 'flex', alignItems: 'center', padding: 0 }}>
+            {showSearchKey ? <EyeOffIcon size={16} color={t.textSecondary} /> : <EyeIcon size={16} color={t.textSecondary} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Strategy */}
+      <div style={sectionStyle}>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Strategy</span>
+
+        <label style={labelStyle}>Brain Strategy Preset</label>
+        <select
+          value={activeStrategy}
+          onChange={e => handleStrategyChange(e.target.value)}
+          style={selectStyle}
+        >
+          {Object.entries(STRATEGY_PRESETS).map(([k, v]) => (
+            <option key={k} value={k}>{v.label}</option>
+          ))}
+          {activeStrategy === 'custom' && <option value="custom">Custom</option>}
+        </select>
+
+        {/* Custom Brain Prompt */}
+        <button
+          onClick={() => setPromptExpanded(p => !p)}
+          style={{
+            width: '100%', padding: '6px 0', background: 'none', border: 'none',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            color: t.textSecondary, fontSize: 11, fontWeight: 500, textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+          }}
+        >
+          <span style={{ transform: promptExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s', display: 'inline-block' }}>&#9654;</span>
+          Custom Brain Prompt
+        </button>
+        {promptExpanded && (
+          <div style={{ marginBottom: 8 }}>
+            <textarea
+              value={settings.customBrainPrompt}
+              onChange={e => onSettingChange('customBrainPrompt', e.target.value.slice(0, 2000))}
+              placeholder="Optional: override the Brain's system prompt for task decomposition..."
+              rows={4}
+              style={{
+                width: '100%', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.5)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                borderRadius: 10, padding: '8px 12px', color: t.textPrimary, fontSize: 12,
+                fontFamily: 'inherit', outline: 'none', resize: 'vertical', minHeight: 60, maxHeight: 160,
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+              <span style={{ fontSize: 10, color: t.textSecondary }}>{settings.customBrainPrompt.length}/2000</span>
+              {settings.customBrainPrompt && (
+                <button onClick={() => onSettingChange('customBrainPrompt', '')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 10, fontWeight: 600 }}>
+                  Reset to Default
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Model Config */}
@@ -247,6 +507,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
           onChange={v => onSettingChange('perAgentTimeout', v)} min={10} max={300} />
         <GlassSlider t={t} label="Total Task Timeout (s)" value={settings.totalTaskTimeout}
           onChange={v => onSettingChange('totalTaskTimeout', v)} min={60} max={1200} />
+        {valMsg(timeoutVal)}
       </div>
 
       {/* Quality */}
@@ -272,41 +533,31 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
         </div>
       </div>
 
+      {/* Cost Estimates Toggle */}
+      <div style={{ marginBottom: 12 }}>
+        <button
+          role="switch" aria-checked={settings.showCostEstimates}
+          onClick={() => onSettingChange('showCostEstimates', !settings.showCostEstimates)}
+          onMouseEnter={() => setHoveredCostToggle(true)}
+          onMouseLeave={() => setHoveredCostToggle(false)}
+          style={toggleStyle(settings.showCostEstimates, hoveredCostToggle)}
+        >
+          <span style={{ fontSize: 13, fontWeight: 500, color: t.textPrimary, flex: 1, textAlign: 'left' }}>Show Cost Estimates</span>
+          <ToggleSwitch active={settings.showCostEstimates} />
+        </button>
+      </div>
+
       {/* Dark mode */}
       <button
         role="switch" aria-checked={isDark}
         onClick={onToggleDark}
         onMouseEnter={() => setHoveredDarkToggle(true)}
         onMouseLeave={() => setHoveredDarkToggle(false)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-          borderRadius: 14, cursor: 'pointer', width: '100%',
-          background: hoveredDarkToggle
-            ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)')
-            : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)'),
-          border: `1px solid ${hoveredDarkToggle
-            ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)')
-            : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')}`,
-          transition: 'all 0.3s ease',
-        }}
+        style={toggleStyle(isDark, hoveredDarkToggle)}
       >
         {isDark ? <MoonIcon size={16} color={t.textSecondary} /> : <SunIcon size={16} color={t.textSecondary} />}
         <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: t.textPrimary, textAlign: 'left' }}>Dark Mode</span>
-        <div style={{
-          width: 44, height: 24, borderRadius: 12, position: 'relative',
-          background: isDark ? 'rgba(0,37,201,0.25)' : 'rgba(0,0,0,0.12)',
-          border: `1px solid ${isDark ? '#0025C9' : 'rgba(0,0,0,0.12)'}`,
-          transition: 'all 0.3s ease', flexShrink: 0,
-        }}>
-          <div style={{
-            position: 'absolute', top: 3,
-            left: isDark ? 'calc(100% - 19px)' : 3,
-            width: 16, height: 16, borderRadius: '50%',
-            background: isDark ? '#4a7aff' : '#94a3b8',
-            boxShadow: isDark ? '0 0 10px rgba(0,37,201,0.6)' : 'none',
-            transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
-          }} />
-        </div>
+        <ToggleSwitch active={isDark} />
       </button>
     </div>
   );
@@ -752,9 +1003,67 @@ export default function App() {
 
   const t = useMemo(() => tokens(isDark), [isDark]);
 
-  // Persist settings
+  // Persist settings to localStorage
   useEffect(() => { localStorage.setItem('hydra_settings', JSON.stringify(settings)); }, [settings]);
   useEffect(() => { localStorage.setItem('hydra_dark', JSON.stringify(isDark)); }, [isDark]);
+
+  // Sync settings to backend (debounced 800ms)
+  useEffect(() => {
+    if (!settingsDirty) return;
+    if (configSyncTimerRef.current) clearTimeout(configSyncTimerRef.current);
+    configSyncTimerRef.current = setTimeout(() => {
+      // UI-only prefs don't go to backend
+      const backendFields = {
+        api_key: settings.apiKey || undefined,
+        api_base: settings.apiBaseUrl || undefined,
+        default_model: settings.model,
+        brain_model: settings.brainModel,
+        post_brain_model: settings.postBrainModel,
+        max_concurrent_agents: settings.maxConcurrentAgents,
+        per_agent_timeout_seconds: settings.perAgentTimeout,
+        total_task_timeout_seconds: settings.totalTaskTimeout,
+        min_quality_score: settings.qualityScoreThreshold,
+        output_directory: settings.outputDirectory,
+        search_backend: settings.searchBackend,
+        search_api_key: settings.searchApiKey || undefined,
+        custom_brain_prompt: settings.customBrainPrompt || undefined,
+      };
+      Object.keys(backendFields).forEach(k => backendFields[k] === undefined && delete backendFields[k]);
+      updateConfig(settings.serverToken, backendFields)
+        .then(() => { setSettingsDirty(false); addToast('Saved \u2713', 'success'); })
+        .catch(() => { addToast('Failed to save settings to server', 'error'); });
+    }, 800);
+    return () => { if (configSyncTimerRef.current) clearTimeout(configSyncTimerRef.current); };
+  }, [settingsDirty, settings, addToast]);
+
+  // Load server config on mount and merge (server wins for execution params, localStorage wins for UI prefs)
+  const serverTokenRef = useRef(settings.serverToken);
+  serverTokenRef.current = settings.serverToken;
+  useEffect(() => {
+    const loadConfig = () => {
+      fetchConfig(serverTokenRef.current)
+        .then(serverCfg => {
+          setSettings(prev => ({
+            ...prev,
+            model: serverCfg.default_model || prev.model,
+            brainModel: serverCfg.brain_model || prev.brainModel,
+            postBrainModel: serverCfg.post_brain_model || prev.postBrainModel,
+            maxConcurrentAgents: serverCfg.max_concurrent_agents ?? prev.maxConcurrentAgents,
+            perAgentTimeout: serverCfg.per_agent_timeout_seconds ?? prev.perAgentTimeout,
+            totalTaskTimeout: serverCfg.total_task_timeout_seconds ?? prev.totalTaskTimeout,
+            qualityScoreThreshold: serverCfg.min_quality_score ?? prev.qualityScoreThreshold,
+            outputDirectory: serverCfg.output_directory || prev.outputDirectory,
+            searchBackend: serverCfg.search_backend || prev.searchBackend,
+            customBrainPrompt: serverCfg.custom_brain_prompt || prev.customBrainPrompt,
+          }));
+        })
+        .catch(() => {}); // server may not be reachable yet
+    };
+    loadConfig();
+    // Retry once after 3s in case server wasn't ready on first load
+    const retry = setTimeout(loadConfig, 3000);
+    return () => clearTimeout(retry);
+  }, []);
 
   // Inject styles
   useEffect(() => {
@@ -824,8 +1133,18 @@ export default function App() {
     }
   }, [appState, settings.apiBaseUrl, settings.serverToken]);
 
+  // Dirty state: tracks unsaved settings changes
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const configSyncTimerRef = useRef(null);
+
   const handleSettingChange = useCallback((key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }));
+    setSettingsDirty(true);
+  }, []);
+
+  const handleBatchChange = useCallback((updates) => {
+    setSettings(prev => ({ ...prev, ...updates }));
+    setSettingsDirty(true);
   }, []);
 
   // ── Start task ─────────────────────────────────────────────────────────────
@@ -872,6 +1191,9 @@ export default function App() {
         total_task_timeout_seconds: settings.totalTaskTimeout,
         min_quality_score: settings.qualityScoreThreshold,
         output_directory: settings.outputDirectory,
+        search_backend: settings.searchBackend || undefined,
+        search_api_key: settings.searchApiKey || undefined,
+        custom_brain_prompt: settings.customBrainPrompt || undefined,
       };
       // Remove undefined values
       Object.keys(configOverrides).forEach(k => configOverrides[k] === undefined && delete configOverrides[k]);
@@ -1061,18 +1383,29 @@ export default function App() {
             onMouseEnter={() => setHoveredSettingsBtn(true)}
             onMouseLeave={() => setHoveredSettingsBtn(false)}
             aria-label="Settings"
-            style={navBtnStyle(settingsOpen, hoveredSettingsBtn)}
+            style={{ ...navBtnStyle(settingsOpen, hoveredSettingsBtn), position: 'relative' }}
           >
             <GearIcon size={20} />
+            {settingsDirty && (
+              <div style={{
+                position: 'absolute', top: 6, right: 6,
+                width: 7, height: 7, borderRadius: '50%',
+                background: '#f59e0b',
+                boxShadow: '0 0 6px rgba(245,158,11,0.6)',
+              }} />
+            )}
           </button>
           <div ref={settingsPanelRef} className="hydra-settings-panel">
             <SettingsPanel
               open={settingsOpen}
               settings={settings}
               onSettingChange={handleSettingChange}
+              onBatchChange={handleBatchChange}
               isDark={isDark}
               onToggleDark={() => setIsDark(p => !p)}
               t={t}
+              addToast={addToast}
+              serverToken={settings.serverToken}
             />
           </div>
         </div>
@@ -1221,6 +1554,8 @@ export default function App() {
               setInputValue(currentTask);
               handleNewTask();
             }}
+            activeStrategy={STRATEGY_PRESETS[detectStrategy(settings)]?.label || 'Custom'}
+            showCostEstimates={settings.showCostEstimates}
           />
         </>
       )}
@@ -1239,6 +1574,7 @@ export default function App() {
             handleNewTask();
           }}
           addToast={addToast}
+          showCostEstimates={settings.showCostEstimates}
         />
       )}
 
