@@ -19,7 +19,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
 - 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
 - 🔧 **22 Built-in Tools** — Document generation, research, data analysis, code execution, memory, translation, validation
-- 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval before executing
+- 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval with risk badges, keyboard shortcuts, auto-timeout, and confirmation queue
 - 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
 - 🌐 **FastAPI Backend** — REST + WebSocket API with task history, file upload, optional auth token
 
@@ -140,7 +140,8 @@ The built-in web interface provides a real-time view of the multi-agent pipeline
 - Result view with markdown rendering, agent breakdown, file downloads
 - Export: clipboard (with metadata), PDF (print stylesheet), DOCX (server-generated)
 - Task history with search and re-run
-- Human-in-the-loop confirmation modals
+- Human-in-the-loop confirmation modals with risk badges, queue, auto-timeout, keyboard shortcuts
+- Confirmation timeline log tracking all approval decisions
 - Connection state monitoring with error banners and toast notifications
 - Dark/light mode with glassmorphism design
 - Works without backend (mock mode for demo)
@@ -468,8 +469,8 @@ hydra.tool_registry.register(MyTool())
 **Phase 4 (in progress):**
 - [x] Connection error handling (state machine, banners, toasts)
 - [x] Export: clipboard + PDF + DOCX
-- [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes)
-- [ ] Human-in-the-loop confirmation modal polish
+- [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
+- [x] Human-in-the-loop confirmation modal (queue, risk badges, auto-timeout, timeline)
 - [ ] Settings: test connection, brain strategy selector, cost estimation
 - [ ] Data classification / sensitivity routing
 - [ ] Responsive polish (mobile/tablet/desktop)
