@@ -106,11 +106,18 @@ class TemplateRenderTool(BaseTool):
 
             if template_path:
                 path = safe_read_path(template_path, allowed_roots=[self._output_dir, Path.cwd()])
+                # Restrict loader to output_dir + cwd only — prevents {% include "../../etc/passwd" %}
+                allowed_dirs = [str(Path(self._output_dir).resolve()), str(Path.cwd().resolve())]
                 env = SandboxedEnvironment(
-                    loader=FileSystemLoader(str(path.parent)),
+                    loader=FileSystemLoader(allowed_dirs),
                     **env_kwargs,
                 )
-                tmpl = env.get_template(path.name)
+                # Load by relative path from one of the allowed dirs
+                try:
+                    rel = path.relative_to(Path(self._output_dir).resolve())
+                except ValueError:
+                    rel = path.relative_to(Path.cwd().resolve())
+                tmpl = env.get_template(str(rel))
             else:
                 env = SandboxedEnvironment(loader=BaseLoader(), **env_kwargs)
                 tmpl = env.from_string(template)

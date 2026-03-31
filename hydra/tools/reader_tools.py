@@ -191,76 +191,72 @@ class ReadXlsxTool(BaseTool):
             from openpyxl import load_workbook
 
             path = safe_read_path(file_path, allowed_roots=[self._output_dir, Path.cwd()])
-
             wb = load_workbook(str(path), read_only=True, data_only=True)
-            result: dict = {"sheets": wb.sheetnames}
+            try:
+                result: dict = {"sheets": wb.sheetnames}
+                sheets_to_read = wb.sheetnames if sheet == "__all__" else [sheet or wb.sheetnames[0]]
+                sheets_data = {}
 
-            sheets_to_read = wb.sheetnames if sheet == "__all__" else [sheet or wb.sheetnames[0]]
-            sheets_data = {}
-
-            for sname in sheets_to_read:
-                if sname not in wb.sheetnames:
-                    continue
-                ws = wb[sname]
-                # Stream rows — only keep max_rows in memory, count total without materializing
-                header_cells = None
-                records = []
-                total = 0
-                for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
-                    if row_idx == header_row - 1:
-                        header_cells = row
+                for sname in sheets_to_read:
+                    if sname not in wb.sheetnames:
                         continue
-                    if row_idx < header_row:
-                        continue
-                    total += 1
-                    if max_rows > 0 and len(records) >= max_rows:
-                        continue  # keep counting total but stop collecting records
+                    ws = wb[sname]
+                    # Stream rows — compute header once, only keep max_rows in memory
+                    header_cells = None
+                    hdr: list[str] = []
+                    records = []
+                    total = 0
+                    for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
+                        if row_idx == header_row - 1:
+                            header_cells = row
+                            hdr = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(row)]
+                            continue
+                        if row_idx < header_row or header_cells is None:
+                            continue
+                        total += 1
+                        if max_rows > 0 and len(records) >= max_rows:
+                            continue
+                        record = {}
+                        for j, val in enumerate(row):
+                            key = hdr[j] if j < len(hdr) else f"col_{j}"
+                            if hasattr(val, "isoformat"):
+                                val = val.isoformat()
+                            record[key] = val
+                        records.append(record)
 
-                    record = {}
                     if header_cells is None:
+                        sheets_data[sname] = {"headers": [], "rows": [], "total_rows": 0}
                         continue
-                    hdr = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(header_cells)]
-                    for j, val in enumerate(row):
-                        key = hdr[j] if j < len(hdr) else f"col_{j}"
-                        if hasattr(val, "isoformat"):
-                            val = val.isoformat()
-                        record[key] = val
-                    records.append(record)
 
-                if header_cells is None:
-                    sheets_data[sname] = {"headers": [], "rows": [], "total_rows": 0}
-                    continue
+                    sheet_result: dict = {
+                        "headers": hdr,
+                        "rows": records,
+                        "total_rows": total,
+                        "truncated": total > max_rows > 0,
+                    }
 
-                headers = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(header_cells)]
+                    if include_stats and records:
+                        col_stats = {}
+                        for h in hdr:
+                            values = [r.get(h) for r in records if r.get(h) is not None]
+                            types = set(type(v).__name__ for v in values)
+                            stat: dict = {"types": list(types), "non_null": len(values)}
+                            nums = [v for v in values if isinstance(v, (int, float))]
+                            if nums:
+                                stat.update({
+                                    "min": min(nums),
+                                    "max": max(nums),
+                                    "mean": round(sum(nums) / len(nums), 2),
+                                })
+                            stat["sample_values"] = [str(v) for v in values[:3]]
+                            col_stats[h] = stat
+                        sheet_result["column_stats"] = col_stats
 
-                sheet_result: dict = {
-                    "headers": headers,
-                    "rows": records,
-                    "total_rows": total,
-                    "truncated": total > max_rows > 0,
-                }
+                    sheets_data[sname] = sheet_result
 
-                if include_stats and records:
-                    col_stats = {}
-                    for h in headers:
-                        values = [r.get(h) for r in records if r.get(h) is not None]
-                        types = set(type(v).__name__ for v in values)
-                        stat: dict = {"types": list(types), "non_null": len(values)}
-                        nums = [v for v in values if isinstance(v, (int, float))]
-                        if nums:
-                            stat.update({
-                                "min": min(nums),
-                                "max": max(nums),
-                                "mean": round(sum(nums) / len(nums), 2),
-                            })
-                        stat["sample_values"] = [str(v) for v in values[:3]]
-                        col_stats[h] = stat
-                    sheet_result["column_stats"] = col_stats
-
-                sheets_data[sname] = sheet_result
-
-            wb.close()
-            result["data"] = sheets_data
+                result["data"] = sheets_data
+            finally:
+                wb.close()
 
             logger.info("read_xlsx_success", file_path=file_path, sheets_read=len(sheets_data))
             return ToolResult(success=True, data=result)
