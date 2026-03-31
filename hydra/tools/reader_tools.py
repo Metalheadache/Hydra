@@ -202,31 +202,36 @@ class ReadXlsxTool(BaseTool):
                 if sname not in wb.sheetnames:
                     continue
                 ws = wb[sname]
-                rows = list(ws.iter_rows(values_only=True))
-                if not rows:
-                    sheets_data[sname] = {"headers": [], "rows": [], "total_rows": 0}
-                    continue
-
-                h_idx = header_row - 1
-                if h_idx >= len(rows):
-                    sheets_data[sname] = {"headers": [], "rows": [], "total_rows": 0, "error": "header_row out of range"}
-                    continue
-
-                headers = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[h_idx])]
-                data_rows = rows[h_idx + 1 :]
-                total = len(data_rows)
-                if max_rows > 0:
-                    data_rows = data_rows[:max_rows]
-
+                # Stream rows — only keep max_rows in memory, count total without materializing
+                header_cells = None
                 records = []
-                for row in data_rows:
+                total = 0
+                for row_idx, row in enumerate(ws.iter_rows(values_only=True)):
+                    if row_idx == header_row - 1:
+                        header_cells = row
+                        continue
+                    if row_idx < header_row:
+                        continue
+                    total += 1
+                    if max_rows > 0 and len(records) >= max_rows:
+                        continue  # keep counting total but stop collecting records
+
                     record = {}
+                    if header_cells is None:
+                        continue
+                    hdr = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(header_cells)]
                     for j, val in enumerate(row):
-                        key = headers[j] if j < len(headers) else f"col_{j}"
+                        key = hdr[j] if j < len(hdr) else f"col_{j}"
                         if hasattr(val, "isoformat"):
                             val = val.isoformat()
                         record[key] = val
                     records.append(record)
+
+                if header_cells is None:
+                    sheets_data[sname] = {"headers": [], "rows": [], "total_rows": 0}
+                    continue
+
+                headers = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(header_cells)]
 
                 sheet_result: dict = {
                     "headers": headers,

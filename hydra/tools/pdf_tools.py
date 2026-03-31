@@ -308,6 +308,9 @@ class PdfSplitTool(BaseTool):
         if backend == "none":
             return ToolResult(success=False, error="No PDF library found. Install pymupdf or pypdf.")
 
+        if mode == "chunks" and chunk_size < 1:
+            return ToolResult(success=False, error=f"chunk_size must be >= 1, got {chunk_size}")
+
         try:
             src_path = safe_read_path(file_path, allowed_roots=[str(Path(self._output_dir).resolve()), str(Path.cwd().resolve())])
             output_dir = ensure_dir(self._output_dir)

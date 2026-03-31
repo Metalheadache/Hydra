@@ -105,7 +105,7 @@ class TemplateRenderTool(BaseTool):
             }
 
             if template_path:
-                path = safe_read_path(template_path)
+                path = safe_read_path(template_path, allowed_roots=[self._output_dir, Path.cwd()])
                 env = SandboxedEnvironment(
                     loader=FileSystemLoader(str(path.parent)),
                     **env_kwargs,
