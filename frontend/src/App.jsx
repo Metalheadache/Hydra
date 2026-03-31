@@ -1054,6 +1054,7 @@ export default function App() {
             qualityScoreThreshold: serverCfg.min_quality_score ?? prev.qualityScoreThreshold,
             outputDirectory: serverCfg.output_directory || prev.outputDirectory,
             searchBackend: serverCfg.search_backend || prev.searchBackend,
+            searchApiKey: serverCfg.search_api_key || prev.searchApiKey,
             customBrainPrompt: serverCfg.custom_brain_prompt || prev.customBrainPrompt,
           }));
         })
