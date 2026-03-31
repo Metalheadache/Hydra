@@ -457,7 +457,7 @@ async def export_docx(body: dict) -> Any:
     return Response(
         content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{title}.docx"'},
+        headers={"Content-Disposition": f'attachment; filename="{re.sub(r"[^a-zA-Z0-9 _-]", "", title)[:100] or "Hydra Report"}.docx"'},
     )
 
 

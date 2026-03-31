@@ -35,9 +35,9 @@ class HydraConfig(BaseSettings):
     max_tokens_brain: int = Field(default=4096, description="Max tokens for the Brain task-decomposition LLM call.")
 
     # ── Execution ─────────────────────────────────────────────────────────────
-    max_concurrent_agents: int = Field(default=5, description="Max number of agents running simultaneously.")
-    per_agent_timeout_seconds: int = Field(default=60, description="Timeout (seconds) per agent execution.")
-    total_task_timeout_seconds: int = Field(default=600, description="Total timeout for the entire task pipeline.")
+    max_concurrent_agents: int = Field(default=5, ge=1, le=50, description="Max number of agents running simultaneously.")
+    per_agent_timeout_seconds: int = Field(default=60, gt=0, le=3600, description="Timeout (seconds) per agent execution.")
+    total_task_timeout_seconds: int = Field(default=600, gt=0, le=7200, description="Total timeout for the entire task pipeline.")
     total_token_budget: int = Field(default=100_000, description="Abort if total token usage exceeds this budget.")
 
     # ── Tool Loop ─────────────────────────────────────────────────────────────
@@ -48,14 +48,14 @@ class HydraConfig(BaseSettings):
     retry_backoff_base: float = Field(default=1.0, description="Base delay (seconds) for exponential backoff.")
 
     # ── Quality ───────────────────────────────────────────────────────────────
-    min_quality_score: float = Field(default=5.0, description="Minimum quality score to pass the quality gate.")
+    min_quality_score: float = Field(default=5.0, ge=0.0, le=10.0, description="Minimum quality score to pass the quality gate.")
 
     # ── Paths ─────────────────────────────────────────────────────────────────
     output_directory: str = Field(default="./hydra_output", description="Directory where generated files are written.")
 
     # ── File Upload ───────────────────────────────────────────────────────────
-    max_upload_files: int = Field(default=20, description="Maximum number of files that can be attached per run.")
-    max_upload_file_size_mb: int = Field(default=50, description="Maximum file size in MB; larger files are skipped.")
+    max_upload_files: int = Field(default=20, ge=1, le=100, description="Maximum number of files that can be attached per run.")
+    max_upload_file_size_mb: int = Field(default=50, ge=1, le=500, description="Maximum file size in MB; larger files are skipped.")
 
     # ── Search ────────────────────────────────────────────────────────────────
     search_api_key: str = Field(default="", description="API key for web search (Brave/Tavily/SerpAPI).")
@@ -64,7 +64,7 @@ class HydraConfig(BaseSettings):
     # ── Server Auth ───────────────────────────────────────────────────────────
     server_token: str = Field(
         default="",
-        description="Optional API token for server auth. When set, all /api/* routes require X-API-Key header or ?token= query param. Env: HYDRA_SERVER_TOKEN.",
+        description="Optional API token for server auth. When set, all /api/* routes require X-API-Key header. Env: HYDRA_SERVER_TOKEN.",
     )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
