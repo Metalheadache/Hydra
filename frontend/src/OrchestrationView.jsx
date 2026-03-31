@@ -410,9 +410,10 @@ export const SynthesisPanel = ({ text, isStreaming, isDark }) => {
 };
 
 // ─── StatusBar ────────────────────────────────────────────────────────────────
-export const StatusBar = ({ startTime, totalTokens, isDark }) => {
+export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog }) => {
   const t = tokens(isDark);
   const [elapsed, setElapsed] = useState(0);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -420,6 +421,8 @@ export const StatusBar = ({ startTime, totalTokens, isDark }) => {
     }, 1000);
     return () => clearInterval(interval);
   }, [startTime]);
+
+  const approvalCount = (confirmationLog || []).filter(e => e.decision === 'approved').length;
 
   return (
     <div style={{
@@ -433,16 +436,167 @@ export const StatusBar = ({ startTime, totalTokens, isDark }) => {
       fontSize: 12, color: t.textSecondary,
       flexWrap: 'wrap',
     }}>
-      <span>⏱ {formatElapsed(elapsed)}</span>
-      <span>🪙 {formatTokens(totalTokens)} tokens</span>
-      <span>💰 {formatCost(totalTokens)}</span>
+      <span>\u23f1 {formatElapsed(elapsed)}</span>
+      <span>\ud83e\ude99 {formatTokens(totalTokens)} tokens</span>
+      <span>\ud83d\udcb0 {formatCost(totalTokens)}</span>
+
+      {/* Confirmation timeline badge */}
+      {confirmationLog && confirmationLog.length > 0 && (
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <button
+            onClick={() => setShowTimeline(prev => !prev)}
+            style={{
+              background: 'rgba(0,37,201,0.1)', border: '1px solid rgba(0,37,201,0.25)',
+              borderRadius: 999, padding: '3px 10px', cursor: 'pointer',
+              color: '#4a6de5', fontSize: 11, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 5,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            \ud83d\udd10 {approvalCount} approval{approvalCount !== 1 ? 's' : ''}
+            <span style={{ fontSize: 10, opacity: 0.7 }}>({confirmationLog.length} total)</span>
+          </button>
+          {showTimeline && (
+            <ConfirmationTimeline
+              log={confirmationLog}
+              isDark={isDark}
+              onClose={() => setShowTimeline(false)}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
+// ─── Tool risk & description maps ────────────────────────────────────────────
+const TOOL_RISK = {
+  run_python: 'high', run_shell: 'high',
+  http_request: 'medium', web_fetch: 'medium',
+};
+
+const RISK_CONFIG = {
+  high:   { emoji: '\ud83d\udd34', label: 'HIGH RISK',   color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
+  medium: { emoji: '\ud83d\udfe1', label: 'MEDIUM RISK', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)' },
+  low:    { emoji: '\ud83d\udfe2', label: 'LOW RISK',    color: '#4ade80', bg: 'rgba(74,222,128,0.15)',  border: 'rgba(74,222,128,0.3)' },
+};
+
+const TOOL_DESCRIPTIONS = {
+  // File writing
+  write_markdown: 'Write a Markdown (.md) file',
+  write_json: 'Write a JSON file with pretty-printing',
+  write_csv: 'Write a CSV file from rows',
+  write_code: 'Write source code (any extension)',
+  // Document generation
+  write_docx: 'Generate a Word document (headings, bullets, formatting)',
+  write_xlsx: 'Generate an Excel spreadsheet (multi-sheet, filters)',
+  write_pptx: 'Generate a PowerPoint presentation',
+  read_pdf: 'Extract text from a PDF file',
+  // Research & web
+  web_search: 'Search the web using a search engine',
+  web_fetch: 'Fetch and extract content from a URL',
+  http_request: 'Make an HTTP request (GET/POST/PUT/DELETE)',
+  // Data & analysis
+  json_validator: 'Validate JSON data against a schema',
+  chart_generator: 'Generate bar/line/pie/scatter charts as PNG',
+  data_transform: 'Filter, sort, group, and transform data',
+  // Code execution
+  run_python: 'Execute Python code in a temporary directory',
+  run_shell: 'Execute whitelisted shell commands',
+  // Memory
+  memory_store: 'Store data in shared agent memory',
+  memory_retrieve: 'Retrieve data from shared agent memory',
+  // Language
+  translate: 'Translate text between languages via LLM',
+  summarize: 'Summarize text (bullets, paragraph, or executive)',
+  // Validation
+  output_validator: 'Validate data against a JSON Schema',
+  quality_scorer: 'LLM-based quality scoring (1-10)',
+};
+
+const CODE_KEYS = new Set(['code', 'script', 'command', 'cmd', 'query', 'body', 'python', 'shell']);
+
 // ─── Confirmation Modal ───────────────────────────────────────────────────────
-export const ConfirmationModal = ({ data, onApprove, onReject, isDark }) => {
+export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onReject, isDark, timeoutSeconds }) => {
   const t = tokens(isDark);
+  const [expandedKeys, setExpandedKeys] = useState({});
+  const [secondsLeft, setSecondsLeft] = useState(timeoutSeconds || 120);
+  const onRejectRef = useRef(onReject);
+  onRejectRef.current = onReject;
+
+  // Auto-timeout countdown — uses ref to avoid resetting timer on callback changes
+  useEffect(() => {
+    setSecondsLeft(timeoutSeconds || 120);
+    const interval = setInterval(() => {
+      setSecondsLeft(prev => {
+        if (prev <= 1) { clearInterval(interval); onRejectRef.current?.('timeout'); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [data?.confirmation_id, timeoutSeconds]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); onApprove?.(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onReject?.('user'); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onApprove, onReject]);
+
+  const toolName = data?.tool_name || 'unknown';
+  const riskLevel = TOOL_RISK[toolName] || 'low';
+  const risk = RISK_CONFIG[riskLevel];
+  const description = TOOL_DESCRIPTIONS[toolName] || 'Custom tool';
+  const showCountdown = secondsLeft <= 30;
+  const progressPct = (secondsLeft / (timeoutSeconds || 120)) * 100;
+
+  const toggleExpand = (key) => setExpandedKeys(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const renderArgValue = (key, value) => {
+    const strVal = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    const isCode = CODE_KEYS.has(key.toLowerCase());
+    const isLong = strVal.length > 200;
+    const expanded = expandedKeys[key];
+
+    return (
+      <div key={key} style={{
+        display: 'flex', gap: 10, padding: '6px 0',
+        borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
+        alignItems: 'flex-start',
+      }}>
+        <span style={{
+          fontSize: 12, color: t.textSecondary, minWidth: 80, fontWeight: 500,
+          fontFamily: 'monospace', flexShrink: 0, paddingTop: 2,
+        }}>
+          {key}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 12, color: t.textPrimary, wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap', lineHeight: 1.5,
+            ...(isCode ? {
+              background: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)',
+              padding: '6px 8px', borderRadius: 6, fontFamily: 'monospace',
+              border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+            } : {}),
+          }}>
+            {isLong && !expanded ? strVal.slice(0, 200) + '...' : strVal}
+          </div>
+          {isLong && (
+            <button onClick={(e) => { e.stopPropagation(); toggleExpand(key); }} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#4a6de5', fontSize: 11, padding: '2px 0', marginTop: 2,
+            }}>
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div style={{
@@ -453,55 +607,184 @@ export const ConfirmationModal = ({ data, onApprove, onReject, isDark }) => {
       padding: 24,
     }}>
       <div style={{
-        maxWidth: 480, width: '100%',
-        padding: '24px',
+        maxWidth: 520, width: '100%',
         borderRadius: 20,
         background: t.panelBg,
         border: `1px solid ${t.panelBorder}`,
         backdropFilter: 'blur(40px)',
         WebkitBackdropFilter: 'blur(40px)',
         boxShadow: '0 0 60px rgba(0,0,0,0.8)',
+        overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
       }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
-          ⚠️ Confirmation Required
+        <div style={{ padding: '20px 24px 0 24px' }}>
+          {/* Header with queue badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, flex: 1 }}>
+              \u26a0\ufe0f Confirmation Required
+            </span>
+            {queueSize > 1 && (
+              <span style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 999, fontWeight: 600,
+                background: 'rgba(0,37,201,0.15)', border: '1px solid rgba(0,37,201,0.3)',
+                color: '#4a6de5',
+              }}>
+                {queueIndex + 1} of {queueSize}
+              </span>
+            )}
+          </div>
+
+          {/* Risk badge */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px', borderRadius: 999, marginBottom: 12,
+            background: risk.bg, border: `1px solid ${risk.border}`,
+          }}>
+            <span style={{ fontSize: 12 }}>{risk.emoji}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: risk.color, letterSpacing: '0.5px' }}>
+              {risk.label}
+            </span>
+          </div>
+
+          {/* Tool name + description */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: t.textPrimary, marginBottom: 4 }}>
+              {toolName}
+            </div>
+            <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4 }}>
+              {description}
+            </div>
+          </div>
+
+          {/* Formatted args */}
+          {data?.args && Object.keys(data.args).length > 0 && (
+            <div style={{
+              background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+              borderRadius: 12, padding: '8px 12px', marginBottom: 16,
+              border: `1px solid ${t.cardBorder}`,
+              maxHeight: 220, overflowY: 'auto', scrollbarWidth: 'thin',
+            }}>
+              {Object.entries(data.args).map(([k, v]) => renderArgValue(k, v))}
+            </div>
+          )}
+
+          {/* Countdown warning */}
+          {showCountdown && (
+            <div style={{
+              fontSize: 12, color: '#f59e0b', fontWeight: 600, marginBottom: 10,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              \u23f1 Auto-reject in {secondsLeft}s
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
+            <button onClick={onApprove} style={{
+              flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(74,222,128,0.2)', color: '#4ade80',
+              fontWeight: 600, fontSize: 14,
+              border: '1px solid rgba(74,222,128,0.3)',
+              transition: 'all 0.2s ease',
+            }}>
+              \u2705 Approve
+            </button>
+            <button onClick={() => onReject?.()} style={{
+              flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+              fontWeight: 600, fontSize: 14,
+              border: '1px solid rgba(239,68,68,0.3)',
+              transition: 'all 0.2s ease',
+            }}>
+              \u274c Reject
+            </button>
+          </div>
+
+          {/* Keyboard hint */}
+          <div style={{
+            fontSize: 11, color: t.textSecondary, textAlign: 'center',
+            padding: '4px 0 16px 0', opacity: 0.7,
+          }}>
+            Enter to approve \u00b7 Esc to reject
+          </div>
         </div>
-        <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
-          Agent wants to use <strong style={{ color: t.textPrimary }}>{data?.tool_name}</strong>:
-        </div>
-        {data?.args && (
-          <pre style={{
-            fontSize: 12, color: t.textSecondary,
-            background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)',
-            padding: '10px 12px', borderRadius: 10,
-            overflow: 'auto', maxHeight: 200,
-            marginBottom: 20,
-            border: `1px solid ${t.cardBorder}`,
-          }}>
-            {JSON.stringify(data.args, null, 2)}
-          </pre>
-        )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          {/* Issue #3: wire approve/reject to callbacks that also clear pendingConfirmation */}
-          <button onClick={onApprove} style={{
-            flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: 'rgba(74,222,128,0.2)', color: '#4ade80',
-            fontWeight: 600, fontSize: 14,
-            border: '1px solid rgba(74,222,128,0.3)',
-            transition: 'all 0.2s ease',
-          }}>
-            ✅ Approve
-          </button>
-          <button onClick={onReject} style={{
-            flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
-            background: 'rgba(239,68,68,0.15)', color: '#ef4444',
-            fontWeight: 600, fontSize: 14,
-            border: '1px solid rgba(239,68,68,0.3)',
-            transition: 'all 0.2s ease',
-          }}>
-            ❌ Reject
-          </button>
+
+        {/* Timeout progress bar */}
+        <div style={{ height: 3, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+          <div style={{
+            height: '100%', width: `${progressPct}%`,
+            background: secondsLeft <= 30
+              ? `linear-gradient(90deg, #ef4444, #f59e0b)`
+              : 'linear-gradient(90deg, #4a6de5, #0025C9)',
+            transition: 'width 1s linear',
+            borderRadius: '0 2px 2px 0',
+          }} />
         </div>
       </div>
+    </div>
+  );
+};
+
+// ─── Confirmation Timeline Popover ───────────────────────────────────────────
+const ConfirmationTimeline = ({ log, isDark, onClose }) => {
+  const t = tokens(isDark);
+  if (!log || log.length === 0) return null;
+
+  const decisionConfig = {
+    approved:  { emoji: '\u2705', color: '#4ade80', label: 'Approved' },
+    rejected:  { emoji: '\u274c', color: '#ef4444', label: 'Rejected' },
+    timed_out: { emoji: '\u23f1', color: '#f59e0b', label: 'Timed out' },
+  };
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: '100%', right: 0, marginBottom: 8,
+      width: 340, maxHeight: 300, overflowY: 'auto',
+      background: t.panelBg, border: `1px solid ${t.panelBorder}`,
+      borderRadius: 14, padding: '12px',
+      backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)',
+      boxShadow: '0 -4px 30px rgba(0,0,0,0.4)',
+      zIndex: 2000, scrollbarWidth: 'thin',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary, flex: 1, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          \ud83d\udd10 Confirmation Log
+        </span>
+        <button onClick={onClose} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: t.textSecondary, fontSize: 14, lineHeight: 1, padding: '2px',
+        }}>\u00d7</button>
+      </div>
+      {log.map((entry, i) => {
+        const dc = decisionConfig[entry.decision] || decisionConfig.rejected;
+        const riskLevel = TOOL_RISK[entry.tool_name] || 'low';
+        const rc = RISK_CONFIG[riskLevel];
+        return (
+          <div key={entry.confirmation_id || i} style={{
+            padding: '8px 10px', borderRadius: 8, marginBottom: 6,
+            background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 11 }}>{rc.emoji}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary, flex: 1 }}>
+                {entry.tool_name}
+              </span>
+              <span style={{
+                fontSize: 10, fontWeight: 600, color: dc.color,
+                padding: '1px 6px', borderRadius: 999,
+                background: `${dc.color}22`,
+              }}>
+                {dc.emoji} {dc.label}
+              </span>
+            </div>
+            <div style={{ fontSize: 10, color: t.textSecondary, display: 'flex', gap: 10 }}>
+              <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+              {entry.duration_ms != null && <span>{formatElapsed(entry.duration_ms)}</span>}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -531,11 +814,38 @@ export default function OrchestrationView({
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [totalTokens, setTotalTokens] = useState(0);
   const [startTime] = useState(() => Date.now());
-  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  // Phase 4B: confirmation queue replaces single pendingConfirmation
+  const [confirmationQueue, setConfirmationQueue] = useState([]);
+  const [confirmationLog, setConfirmationLog] = useState([]);
+  const confirmationTimestamps = useRef({}); // confirmation_id → arrival time
+  // Toast state for timeout notifications
+  const [toast, setToast] = useState(null);
   // Issue #9: pipeline error state
   const [pipelineError, setPipelineError] = useState(null);
   const lastEventRef = useRef(null);
   const scrollRef = useRef(null);
+
+  // Phase 4B: helper to reject all pending confirmations
+  const onConfirmationRejectRef = useRef(onConfirmationReject);
+  onConfirmationRejectRef.current = onConfirmationReject;
+
+  const rejectAllPending = useCallback(() => {
+    setConfirmationQueue(prev => {
+      if (prev.length === 0) return prev;
+      const now = Date.now();
+      const newEntries = prev.map(c => ({
+        confirmation_id: c.confirmation_id, tool_name: c.tool_name,
+        args: c.args, decision: 'rejected',
+        timestamp: now,
+        duration_ms: now - (confirmationTimestamps.current[c.confirmation_id] || now),
+      }));
+      setConfirmationLog(log => [...log, ...newEntries]);
+      for (const c of prev) {
+        onConfirmationRejectRef.current?.(c.confirmation_id);
+      }
+      return [];
+    });
+  }, []); // stable — uses ref for callback
 
   // Issue #5: token buffer ref to accumulate tokens and flush at 5/sec (200ms)
   const tokenBufferRef = useRef({}); // agentId → { tokens_n, latestPreview }
@@ -697,10 +1007,11 @@ export default function OrchestrationView({
     else if (type === 'file_processed') {
       // intentionally ignored — agent-level status tracks progress
     }
-    // Issue #9: pipeline_error — show error banner
+    // Issue #9: pipeline_error — show error banner + auto-reject pending confirmations
     else if (type === 'pipeline_error') {
       const errMsg = event.data?.error || 'An unknown pipeline error occurred.';
       setPipelineError(errMsg);
+      rejectAllPending();
     }
     else if (type === 'quality_start') {
       setShowQuality(true);
@@ -732,10 +1043,23 @@ export default function OrchestrationView({
       setIsSynthesizing(false);
     }
     else if (type === 'confirmation_required') {
-      setPendingConfirmation(event.data);
+      const data = event.data;
+      // Ignore duplicate confirmation_id
+      setConfirmationQueue(prev => {
+        if (prev.some(c => c.confirmation_id === data.confirmation_id)) return prev;
+        confirmationTimestamps.current[data.confirmation_id] = Date.now();
+        return [...prev, data];
+      });
     }
     else if (type === 'confirmation_response') {
-      setPendingConfirmation(null);
+      // Remove from queue if server echoes back
+      const confId = event.data?.confirmation_id;
+      if (confId) {
+        setConfirmationQueue(prev => prev.filter(c => c.confirmation_id !== confId));
+      }
+    }
+    else if (type === 'pipeline_complete') {
+      rejectAllPending();
     }
   }, []); // empty deps — all state updates use functional updaters (Issue #4)
 
@@ -783,12 +1107,58 @@ export default function OrchestrationView({
     return () => clearInterval(interval);
   }, []);
 
+  // Phase 4B: WS disconnect → auto-reject all pending confirmations
+  useEffect(() => {
+    if (connectionState === 'failed') {
+      rejectAllPending();
+      setToast('Connection lost \u2014 pending confirmations were auto-rejected');
+    }
+  }, [connectionState]); // rejectAllPending is stable (empty deps)
+
+  // Toast auto-dismiss
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   // Scroll to bottom as content grows
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [groups, synthesisText, showQuality]);
+
+  // Phase 4B: confirmation approve/reject handlers
+  const handleConfirmationApprove = useCallback(() => {
+    const current = confirmationQueue[0];
+    if (!current) return;
+    const confId = current.confirmation_id;
+    onConfirmationApprove?.(confId);
+    setConfirmationLog(prev => [...prev, {
+      confirmation_id: confId, tool_name: current.tool_name,
+      args: current.args, decision: 'approved', timestamp: Date.now(),
+      duration_ms: Date.now() - (confirmationTimestamps.current[confId] || Date.now()),
+    }]);
+    setConfirmationQueue(prev => prev.slice(1));
+  }, [confirmationQueue, onConfirmationApprove]);
+
+  const handleConfirmationReject = useCallback((reason) => {
+    const current = confirmationQueue[0];
+    if (!current) return;
+    const confId = current.confirmation_id;
+    onConfirmationReject?.(confId);
+    const decision = reason === 'timeout' ? 'timed_out' : 'rejected';
+    setConfirmationLog(prev => [...prev, {
+      confirmation_id: confId, tool_name: current.tool_name,
+      args: current.args, decision, timestamp: Date.now(),
+      duration_ms: Date.now() - (confirmationTimestamps.current[confId] || Date.now()),
+    }]);
+    setConfirmationQueue(prev => prev.slice(1));
+    if (reason === 'timeout') {
+      setToast('Confirmation timed out \u2014 tool was rejected');
+    }
+  }, [confirmationQueue, onConfirmationReject]);
 
   const [hoveredCancel, setHoveredCancel] = useState(false);
 
@@ -942,22 +1312,32 @@ export default function OrchestrationView({
       </div>
 
       {/* Status bar */}
-      <StatusBar startTime={startTime} totalTokens={totalTokens} isDark={isDark} />
+      <StatusBar startTime={startTime} totalTokens={totalTokens} isDark={isDark} confirmationLog={confirmationLog} />
 
-      {/* Confirmation modal — Issue #3: wired to onConfirmationApprove/Reject props */}
-      {pendingConfirmation && (
+      {/* Phase 4B: Confirmation modal — queue-aware */}
+      {confirmationQueue.length > 0 && (
         <ConfirmationModal
-          data={pendingConfirmation}
+          data={confirmationQueue[0]}
+          queueSize={confirmationQueue.length}
+          queueIndex={0}
           isDark={isDark}
-          onApprove={() => {
-            onConfirmationApprove?.(pendingConfirmation.confirmation_id);
-            setPendingConfirmation(null);
-          }}
-          onReject={() => {
-            onConfirmationReject?.(pendingConfirmation.confirmation_id);
-            setPendingConfirmation(null);
-          }}
+          timeoutSeconds={120}
+          onApprove={handleConfirmationApprove}
+          onReject={handleConfirmationReject}
         />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 3100, padding: '10px 20px', borderRadius: 12,
+          background: 'rgba(245,158,11,0.95)', color: '#000', fontWeight: 600,
+          fontSize: 13, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          animation: 'hydra-toast-in 0.3s ease-out',
+        }}>
+          {toast}
+        </div>
       )}
     </div>
   );
