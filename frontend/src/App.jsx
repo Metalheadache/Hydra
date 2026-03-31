@@ -140,7 +140,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
 
       {/* API Config */}
       <div style={sectionStyle}>
-        <span style={{ ...labelStyle, color: '#0025C9', marginBottom: 10 }}>API Configuration</span>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>API Configuration</span>
 
         <label style={labelStyle}>API Base URL</label>
         <div style={fieldWrapStyle(apiUrlFocused)}>
@@ -191,7 +191,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
 
       {/* Model Config */}
       <div style={sectionStyle}>
-        <span style={{ ...labelStyle, color: '#0025C9', marginBottom: 10 }}>Model</span>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Model</span>
 
         <label style={labelStyle}>Default Model</label>
         <div style={fieldWrapStyle(modelInputFocused)}>
@@ -240,7 +240,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
 
       {/* Execution */}
       <div style={sectionStyle}>
-        <span style={{ ...labelStyle, color: '#0025C9', marginBottom: 10 }}>Execution</span>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Execution</span>
         <GlassSlider t={t} label="Max Concurrent Agents" value={settings.maxConcurrentAgents}
           onChange={v => onSettingChange('maxConcurrentAgents', v)} min={1} max={10} />
         <GlassSlider t={t} label="Per Agent Timeout (s)" value={settings.perAgentTimeout}
@@ -251,7 +251,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
 
       {/* Quality */}
       <div style={sectionStyle}>
-        <span style={{ ...labelStyle, color: '#0025C9', marginBottom: 10 }}>Quality</span>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Quality</span>
         <GlassSlider t={t} label="Quality Score Threshold" value={settings.qualityScoreThreshold}
           onChange={v => onSettingChange('qualityScoreThreshold', v)} min={1} max={10} step={0.5}
           displayValue={settings.qualityScoreThreshold.toFixed(1)} />
@@ -259,7 +259,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, isDark, onToggleDark, 
 
       {/* Output */}
       <div style={sectionStyle}>
-        <span style={{ ...labelStyle, color: '#0025C9', marginBottom: 10 }}>Output</span>
+        <span style={{ ...labelStyle, color: isDark ? '#6B8AFF' : '#0025C9', marginBottom: 10 }}>Output</span>
         <label style={labelStyle}>Output Directory</label>
         <div style={fieldWrapStyle(outputDirFocused)}>
           <input type="text" value={settings.outputDirectory}
@@ -769,7 +769,7 @@ export default function App() {
         overflow: hidden;
       }
       .hydra-textarea::placeholder { color: #4a7aff; opacity: 0.8; }
-      .hydra-textarea:focus::placeholder { color: #0025C9; opacity: 0.7; }
+      .hydra-textarea:focus::placeholder { color: #6B8AFF; opacity: 0.7; }
       .hydra-textarea { scrollbar-width: none; }
       .hydra-textarea::-webkit-scrollbar { display: none; }
       .hydra-slider { -webkit-appearance: none; appearance: none; background: transparent; }
