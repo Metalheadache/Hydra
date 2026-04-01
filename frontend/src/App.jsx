@@ -1095,6 +1095,7 @@ export default function App() {
       .hydra-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
       @keyframes hydra-cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
       @keyframes hydra-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.15); opacity: 0.7; } }
+      select option { background: ${isDark ? '#1a1d24' : '#ffffff'}; color: ${isDark ? '#e2e8f0' : '#1e293b'}; }
       @keyframes hydra-dot-bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
       @keyframes hydra-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
       @keyframes hydra-spin { to { transform: rotate(360deg); } }
