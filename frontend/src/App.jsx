@@ -437,7 +437,7 @@ const SettingsPanel = ({ open, settings, onSettingChange, onBatchChange, isDark,
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-              <span style={{ fontSize: 10, color: t.textSecondary }}>{settings.customBrainPrompt.length}/2000</span>
+              <span style={{ fontSize: 10, color: t.textSecondary }}>{(settings.customBrainPrompt || '').length}/2000</span>
               {settings.customBrainPrompt && (
                 <button onClick={() => onSettingChange('customBrainPrompt', '')}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 10, fontWeight: 600 }}>
