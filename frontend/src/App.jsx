@@ -993,6 +993,11 @@ export default function App() {
   const historyPanelRef = useRef(null);
   const historyBtnRef = useRef(null);
   const mockAbortRef = useRef(false);
+  const configSyncTimerRef = useRef(null);
+  const serverTokenRef = useRef(settings.serverToken);
+
+  // Dirty state
+  const [settingsDirty, setSettingsDirty] = useState(false);
 
   // WebSocket
   const { connect, cancel, respondConfirmation, disconnect, retry,
@@ -1037,7 +1042,6 @@ export default function App() {
   }, [settingsDirty, settings, addToast]);
 
   // Load server config on mount and merge (server wins for execution params, localStorage wins for UI prefs)
-  const serverTokenRef = useRef(settings.serverToken);
   serverTokenRef.current = settings.serverToken;
   useEffect(() => {
     const loadConfig = () => {
@@ -1133,10 +1137,6 @@ export default function App() {
         .catch(() => {}); // silent fail
     }
   }, [appState, settings.apiBaseUrl, settings.serverToken]);
-
-  // Dirty state: tracks unsaved settings changes
-  const [settingsDirty, setSettingsDirty] = useState(false);
-  const configSyncTimerRef = useRef(null);
 
   const handleSettingChange = useCallback((key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }));
