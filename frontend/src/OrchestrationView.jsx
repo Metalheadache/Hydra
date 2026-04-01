@@ -436,9 +436,9 @@ export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog, sho
       fontSize: 12, color: t.textSecondary,
       flexWrap: 'wrap',
     }}>
-      <span>\u23f1 {formatElapsed(elapsed)}</span>
-      <span>\ud83e\ude99 {formatTokens(totalTokens)} tokens</span>
-      {showCostEstimates && <span>\ud83d\udcb0 {formatCost(totalTokens)}</span>}
+      <span>⏱ {formatElapsed(elapsed)}</span>
+      <span>🪙 {formatTokens(totalTokens)} tokens</span>
+      {showCostEstimates && <span>💰 {formatCost(totalTokens)}</span>}
 
       {/* Confirmation timeline badge */}
       {confirmationLog && confirmationLog.length > 0 && (
@@ -453,7 +453,7 @@ export const StatusBar = ({ startTime, totalTokens, isDark, confirmationLog, sho
               transition: 'all 0.2s ease',
             }}
           >
-            \ud83d\udd10 {approvalCount} approval{approvalCount !== 1 ? 's' : ''}
+            🔐 {approvalCount} approval{approvalCount !== 1 ? 's' : ''}
             <span style={{ fontSize: 10, opacity: 0.7 }}>({confirmationLog.length} total)</span>
           </button>
           {showTimeline && (
@@ -477,9 +477,9 @@ const TOOL_RISK = {
 };
 
 const RISK_CONFIG = {
-  high:   { emoji: '\ud83d\udd34', label: 'HIGH RISK',   color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
-  medium: { emoji: '\ud83d\udfe1', label: 'MEDIUM RISK', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)' },
-  low:    { emoji: '\ud83d\udfe2', label: 'LOW RISK',    color: '#4ade80', bg: 'rgba(74,222,128,0.15)',  border: 'rgba(74,222,128,0.3)' },
+  high:   { emoji: '🔴', label: 'HIGH RISK',   color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
+  medium: { emoji: '🟡', label: 'MEDIUM RISK', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.3)' },
+  low:    { emoji: '🟢', label: 'LOW RISK',    color: '#4ade80', bg: 'rgba(74,222,128,0.15)',  border: 'rgba(74,222,128,0.3)' },
 };
 
 const TOOL_DESCRIPTIONS = {
@@ -636,7 +636,7 @@ export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onRe
           {/* Header with queue badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, flex: 1 }}>
-              \u26a0\ufe0f Confirmation Required
+              ⚠️ Confirmation Required
             </span>
             {queueSize > 1 && (
               <span style={{
@@ -689,7 +689,7 @@ export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onRe
               fontSize: 12, color: '#f59e0b', fontWeight: 600, marginBottom: 10,
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
-              \u23f1 Auto-reject in {secondsLeft}s
+              ⏱ Auto-reject in {secondsLeft}s
             </div>
           )}
 
@@ -702,7 +702,7 @@ export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onRe
               border: '1px solid rgba(74,222,128,0.3)',
               transition: 'all 0.2s ease',
             }}>
-              \u2705 Approve
+              ✅ Approve
             </button>
             <button onClick={() => onReject?.()} style={{
               flex: 1, padding: '10px', borderRadius: 10, cursor: 'pointer',
@@ -711,7 +711,7 @@ export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onRe
               border: '1px solid rgba(239,68,68,0.3)',
               transition: 'all 0.2s ease',
             }}>
-              \u274c Reject
+              ❌ Reject
             </button>
           </div>
 
@@ -720,7 +720,7 @@ export const ConfirmationModal = ({ data, queueSize, queueIndex, onApprove, onRe
             fontSize: 11, color: t.textSecondary, textAlign: 'center',
             padding: '4px 0 16px 0', opacity: 0.7,
           }}>
-            Enter to approve \u00b7 Esc to reject
+            Enter to approve · Esc to reject
           </div>
         </div>
 
@@ -746,9 +746,9 @@ const ConfirmationTimeline = ({ log, isDark, onClose }) => {
   if (!log || log.length === 0) return null;
 
   const decisionConfig = {
-    approved:  { emoji: '\u2705', color: '#4ade80', label: 'Approved' },
-    rejected:  { emoji: '\u274c', color: '#ef4444', label: 'Rejected' },
-    timed_out: { emoji: '\u23f1', color: '#f59e0b', label: 'Timed out' },
+    approved:  { emoji: '✅', color: '#4ade80', label: 'Approved' },
+    rejected:  { emoji: '❌', color: '#ef4444', label: 'Rejected' },
+    timed_out: { emoji: '⏱', color: '#f59e0b', label: 'Timed out' },
   };
 
   return (
@@ -763,12 +763,12 @@ const ConfirmationTimeline = ({ log, isDark, onClose }) => {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary, flex: 1, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          \ud83d\udd10 Confirmation Log
+          🔐 Confirmation Log
         </span>
         <button onClick={onClose} style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: t.textSecondary, fontSize: 14, lineHeight: 1, padding: '2px',
-        }}>\u00d7</button>
+        }}>×</button>
       </div>
       {log.map((entry, i) => {
         const dc = decisionConfig[entry.decision] || decisionConfig.rejected;
