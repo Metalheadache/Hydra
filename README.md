@@ -500,7 +500,6 @@ hydra.tool_registry.register(MyTool())
 - [x] Tool expansion: 22 → 32 tools (readers, file manager, templates, PDF ops)
 - [x] Settings: search config, test connection, validation, backend sync
 - [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
-- [ ] Data classification / sensitivity routing
 - [ ] Responsive polish (mobile/tablet/desktop)
 
 **Phase 5:**
@@ -511,6 +510,7 @@ hydra.tool_registry.register(MyTool())
 **Phase 6:**
 - [ ] MCP (Model Context Protocol) tool integration
 - [ ] Vector store / RAG tool
+- [ ] Data classification / sensitivity routing
 - [ ] Docker deployment with `--network none` sandboxing
 - [ ] Webhook triggers
 
