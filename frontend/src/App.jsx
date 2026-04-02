@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   maxConcurrentAgents: 5,
   perAgentTimeout: 300,
   totalTaskTimeout: 1200,
+  tokenBudget: 1000000,
   temperature: 0.4,
   qualityScoreThreshold: 5.0,
   outputDirectory: './hydra_output',
@@ -509,6 +510,9 @@ const SettingsPanel = ({ open, settings, onSettingChange, onBatchChange, isDark,
         <GlassSlider t={t} label="Total Task Timeout (s)" value={settings.totalTaskTimeout}
           onChange={v => onSettingChange('totalTaskTimeout', v)} min={60} max={1200} />
         {valMsg(timeoutVal)}
+        <GlassSlider t={t} label="Token Budget" value={settings.tokenBudget}
+          displayValue={`${(settings.tokenBudget / 1000).toFixed(0)}K`}
+          onChange={v => onSettingChange('tokenBudget', v)} min={100000} max={5000000} step={100000} />
       </div>
 
       {/* Quality */}
@@ -1028,6 +1032,7 @@ export default function App() {
         max_concurrent_agents: settings.maxConcurrentAgents,
         per_agent_timeout_seconds: settings.perAgentTimeout,
         total_task_timeout_seconds: settings.totalTaskTimeout,
+        total_token_budget: settings.tokenBudget,
         min_quality_score: settings.qualityScoreThreshold,
         output_directory: settings.outputDirectory,
         search_backend: settings.searchBackend,
@@ -1056,6 +1061,7 @@ export default function App() {
             maxConcurrentAgents: serverCfg.max_concurrent_agents ?? prev.maxConcurrentAgents,
             perAgentTimeout: serverCfg.per_agent_timeout_seconds ?? prev.perAgentTimeout,
             totalTaskTimeout: serverCfg.total_task_timeout_seconds ?? prev.totalTaskTimeout,
+            tokenBudget: serverCfg.total_token_budget ?? prev.tokenBudget,
             qualityScoreThreshold: serverCfg.min_quality_score ?? prev.qualityScoreThreshold,
             outputDirectory: serverCfg.output_directory || prev.outputDirectory,
             searchBackend: serverCfg.search_backend || prev.searchBackend,
@@ -1192,6 +1198,7 @@ export default function App() {
         max_concurrent_agents: settings.maxConcurrentAgents,
         per_agent_timeout_seconds: settings.perAgentTimeout,
         total_task_timeout_seconds: settings.totalTaskTimeout,
+        total_token_budget: settings.tokenBudget,
         min_quality_score: settings.qualityScoreThreshold,
         output_directory: settings.outputDirectory,
         search_backend: settings.searchBackend || undefined,
