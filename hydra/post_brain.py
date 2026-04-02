@@ -108,11 +108,20 @@ class PostBrain:
         # Re-read outputs to include updated quality_scores
         all_outputs = await self.state_manager.get_all_outputs()
         for sub_task_id, output in all_outputs.items():
+            # Look up agent role from the plan
+            role = sub_task_id
+            for st in self.plan.sub_tasks:
+                if st.id == sub_task_id:
+                    role = st.agent.role if st.agent else sub_task_id
+                    break
             per_agent_quality[sub_task_id] = {
+                "role": role,
                 "status": output.status,
+                "output": str(output.output)[:2000] if output.output else None,
                 "tokens_used": output.tokens_used,
                 "execution_time_ms": output.execution_time_ms,
                 "quality_score": output.quality_score,
+
                 "error": output.error,
             }
 

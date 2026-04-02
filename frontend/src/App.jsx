@@ -1377,7 +1377,7 @@ export default function App() {
       <ToastContainer toasts={toasts} onDismiss={removeToast} isDark={isDark} />
 
       {/* ── Left nav: Settings + History ── */}
-      <div style={{ position: 'fixed', top: 24, left: 24, zIndex: 1001, display: 'flex', gap: 8 }}>
+      <div className="hydra-nav-left" style={{ position: 'fixed', top: 18, left: 24, zIndex: 1001, display: 'flex', gap: 8 }}>
         {/* Settings */}
         <div>
           <button
