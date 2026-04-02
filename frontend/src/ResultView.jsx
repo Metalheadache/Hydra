@@ -170,7 +170,7 @@ const AgentAccordion = ({ agentId, agentData, isDark }) => {
   const [expanded, setExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const score = agentData?.score;
+  const score = agentData?.quality_score ?? agentData?.score;
   const scoreColor = score != null
     ? (score >= 7 ? '#4ade80' : score >= 5 ? '#f59e0b' : '#ef4444')
     : t.textSecondary;
@@ -576,7 +576,7 @@ export default function ResultView({
                   Quality Scores
                 </div>
                 {Object.entries(perAgentQuality).map(([agentId, data]) => {
-                  const score = data?.score;
+                  const score = data?.quality_score ?? data?.score;
                   if (score == null) return null;
                   const color = score >= 7 ? '#4ade80' : score >= 5 ? '#f59e0b' : '#ef4444';
                   return (
