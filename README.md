@@ -492,7 +492,7 @@ hydra.tool_registry.register(MyTool())
 
 ## Roadmap
 
-**Phase 4 (in progress):**
+**Phase 4 ✅ COMPLETE:**
 - [x] Connection error handling (state machine, banners, toasts)
 - [x] Export: clipboard + PDF + DOCX
 - [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
@@ -500,9 +500,9 @@ hydra.tool_registry.register(MyTool())
 - [x] Tool expansion: 22 → 32 tools (readers, file manager, templates, PDF ops)
 - [x] Settings: search config, test connection, validation, backend sync
 - [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
-- [ ] Responsive polish (mobile/tablet/desktop)
+- [x] Responsive polish (mobile/tablet/desktop)
 
-**Phase 5:**
+**Phase 5 ⬅️ NEXT:**
 - [ ] PyInstaller standalone executable (download → double-click → done)
 - [ ] PyPI package (`pip install hydra-agents`)
 - [ ] Vite build → FastAPI serves static
