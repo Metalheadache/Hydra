@@ -19,6 +19,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
 - 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
 - 🔧 **33 Built-in Tools** — Document generation, file reading (.doc/.docx/.xlsx/.csv/.pptx/.pdf/code), file management, research, data analysis, code execution, memory, translation, templates, PDF operations, validation
+- 📎 **Smart File Handling** — Uploaded files auto-extracted for context; agents can re-read originals with reader tools for full structured access (tables, headings, metadata)
 - 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval with risk badges, keyboard shortcuts, auto-timeout, and confirmation queue
 - 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
 - 🌐 **FastAPI Backend** — REST + WebSocket API with task history, file upload, optional auth token
@@ -201,14 +202,14 @@ All settings use the `HYDRA_` environment variable prefix:
 | Variable | Default | Description |
 |---|---|---|
 | `HYDRA_API_KEY` | `""` | LLM provider API key |
-| `HYDRA_DEFAULT_MODEL` | `anthropic/claude-sonnet-4-6` | Default model (litellm format) |
-| `HYDRA_BRAIN_MODEL` | `anthropic/claude-sonnet-4-6` | Model for task planning |
-| `HYDRA_POST_BRAIN_MODEL` | `anthropic/claude-sonnet-4-6` | Model for synthesis |
+| `HYDRA_DEFAULT_MODEL` | `deepseek/deepseek-chat` | Default model (litellm format) |
+| `HYDRA_BRAIN_MODEL` | `deepseek/deepseek-chat` | Model for task planning |
+| `HYDRA_POST_BRAIN_MODEL` | `deepseek/deepseek-chat` | Model for synthesis |
 | `HYDRA_API_BASE` | `None` | Custom API endpoint |
 | `HYDRA_MAX_CONCURRENT_AGENTS` | `5` | Max parallel agents |
-| `HYDRA_PER_AGENT_TIMEOUT_SECONDS` | `60` | Timeout per agent |
-| `HYDRA_TOTAL_TASK_TIMEOUT_SECONDS` | `300` | Total pipeline timeout |
-| `HYDRA_TOTAL_TOKEN_BUDGET` | `100000` | Token budget (abort if exceeded) |
+| `HYDRA_PER_AGENT_TIMEOUT_SECONDS` | `300` | Timeout per agent |
+| `HYDRA_TOTAL_TASK_TIMEOUT_SECONDS` | `1200` | Total pipeline timeout |
+| `HYDRA_TOTAL_TOKEN_BUDGET` | `1000000` | Token budget (abort if exceeded) |
 | `HYDRA_OUTPUT_DIRECTORY` | `./hydra_output` | File output directory |
 | `HYDRA_MIN_QUALITY_SCORE` | `5.0` | Minimum score before retry |
 | `HYDRA_SERVER_TOKEN` | `""` | Optional API auth token |
