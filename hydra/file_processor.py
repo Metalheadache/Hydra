@@ -65,6 +65,7 @@ _MIME_MAP: dict[str, str] = {
     ".kt": "text/x-kotlin",
     # Office
     ".pdf": "application/pdf",
+    ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -184,6 +185,34 @@ def _extract_text_sync(filepath: Path, mime_type: str | None) -> str | None:
         except Exception as e:
             logger.warning("docx_extract_failed", filepath=str(filepath), error=str(e))
             return None
+
+    # Legacy .doc via system tools or binary extraction
+    if ext == ".doc":
+        import subprocess
+        for cmd in [
+            ["textutil", "-convert", "txt", "-stdout", str(filepath)],
+            ["catdoc", str(filepath)],
+            ["antiword", str(filepath)],
+        ]:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, timeout=15)
+                if proc.returncode == 0 and proc.stdout:
+                    text = proc.stdout.decode("utf-8", errors="replace").strip()
+                    if text:
+                        return _truncate(text)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        # Binary fallback
+        try:
+            import re as _re
+            raw = filepath.read_bytes()
+            chunks = _re.findall(rb'[\x20-\x7e\xc0-\xff]{4,}', raw)
+            text = " ".join(c.decode("latin-1") for c in chunks)
+            if text.strip():
+                return _truncate(text)
+        except Exception:
+            pass
+        return None
 
     # XLSX via openpyxl
     if ext == _XLSX_EXTENSION:

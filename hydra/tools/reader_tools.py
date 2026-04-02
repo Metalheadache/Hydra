@@ -36,12 +36,13 @@ logger = structlog.get_logger(__name__)
 
 
 class ReadDocxTool(BaseTool):
-    """Read a Word (.docx) document with structured extraction."""
+    """Read a Word (.docx or .doc) document with structured extraction."""
 
     name = "read_docx"
     description = (
-        "Read a Word (.docx) document. Extracts text with heading structure, "
-        "tables as lists-of-dicts, and document metadata (author, created date, etc). "
+        "Read a Word document (.docx or legacy .doc). For .docx: extracts text with "
+        "heading structure, tables as lists-of-dicts, and metadata. For .doc: extracts "
+        "raw text content (no table/heading structure due to binary format limitations). "
         "Use for ingesting reports, contracts, specs, or any Word document."
     )
     parameters = {
@@ -49,7 +50,7 @@ class ReadDocxTool(BaseTool):
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the .docx file.",
+                "description": "Path to the .docx or .doc file.",
             },
             "extract": {
                 "type": "string",
@@ -74,10 +75,13 @@ class ReadDocxTool(BaseTool):
         self, file_path: str, extract: str = "all", max_chars: int = 50000
     ) -> ToolResult:
         try:
-            from docx import Document
-
             path = safe_read_path(file_path, allowed_roots=[self._output_dir, Path.cwd()])
 
+            # Legacy .doc format — extract raw text
+            if path.suffix.lower() == ".doc":
+                return await self._read_legacy_doc(path, max_chars)
+
+            from docx import Document
             doc = Document(str(path))
             result: dict = {}
 
@@ -130,6 +134,53 @@ class ReadDocxTool(BaseTool):
         except Exception as exc:
             logger.error("read_docx_failed", file_path=file_path, error=str(exc))
             return ToolResult(success=False, error=f"Failed to read DOCX: {exc}")
+
+    async def _read_legacy_doc(self, path: Path, max_chars: int) -> ToolResult:
+        """Extract text from legacy .doc (OLE2 binary) format."""
+        import subprocess
+
+        # Try system tools first (macOS textutil, or catdoc/antiword on Linux)
+        for cmd in [
+            ["textutil", "-convert", "txt", "-stdout", str(path)],
+            ["catdoc", str(path)],
+            ["antiword", str(path)],
+        ]:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, timeout=15)
+                if proc.returncode == 0 and proc.stdout:
+                    text = proc.stdout.decode("utf-8", errors="replace").strip()
+                    if text:
+                        logger.info("read_doc_success", file_path=str(path), method=cmd[0])
+                        return ToolResult(success=True, data={
+                            "text": text[:max_chars],
+                            "truncated": len(text) > max_chars,
+                            "format": "doc_legacy",
+                            "extraction_method": cmd[0],
+                            "note": "Legacy .doc format — table and heading structure not available",
+                        })
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+
+        # Fallback: raw binary text extraction (strips control chars, keeps printable text)
+        try:
+            raw = path.read_bytes()
+            # Extract runs of printable text (4+ chars) from the binary
+            import re as _re
+            text_chunks = _re.findall(rb'[\x20-\x7e\xc0-\xff]{4,}', raw)
+            text = " ".join(chunk.decode("latin-1") for chunk in text_chunks)
+            if text.strip():
+                logger.info("read_doc_success", file_path=str(path), method="binary_extract")
+                return ToolResult(success=True, data={
+                    "text": text[:max_chars],
+                    "truncated": len(text) > max_chars,
+                    "format": "doc_legacy",
+                    "extraction_method": "binary_extract",
+                    "note": "Raw text extraction from binary .doc — may contain artifacts",
+                })
+        except Exception as exc:
+            logger.warning("doc_binary_extract_failed", error=str(exc))
+
+        return ToolResult(success=False, error="Could not extract text from .doc file. Try converting to .docx first.")
 
 
 # ── read_xlsx ─────────────────────────────────────────────────────────────────
