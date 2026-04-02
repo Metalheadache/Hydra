@@ -130,18 +130,57 @@ def _extract_text_sync(filepath: Path, mime_type: str | None) -> str | None:
                 if total_chars >= _MAX_EXTRACTED_CHARS:
                     break
             doc.close()
-            return _truncate("".join(parts))
+            text = "".join(parts)
+            if not text.strip():
+                logger.warning("pdf_empty_text", filepath=str(filepath),
+                              hint="PDF may be scanned/image-based — OCR not available")
+                return "[This PDF appears to be scanned/image-based. No text could be extracted. OCR is not currently available.]"
+            return _truncate(text)
         except Exception as e:
             logger.warning("pdf_extract_failed", filepath=str(filepath), error=str(e))
             return None
 
-    # DOCX via python-docx
+    # DOCX via python-docx (paragraphs + tables + headers/footers)
     if ext == _DOCX_EXTENSION:
         try:
             from docx import Document  # type: ignore
             doc = Document(str(filepath))
-            paragraphs = [p.text for p in doc.paragraphs]
-            return _truncate("\n".join(paragraphs))
+            parts: list[str] = []
+
+            # Extract paragraphs with heading markers
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if not text:
+                    continue
+                if para.style and para.style.name and para.style.name.startswith("Heading"):
+                    level = para.style.name.replace("Heading ", "").strip()
+                    parts.append(f"[H{level}] {text}")
+                else:
+                    parts.append(text)
+
+            # Extract tables as tab-separated rows
+            for i, table in enumerate(doc.tables):
+                if not table.rows:
+                    continue
+                parts.append(f"\n[Table {i + 1}]")
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    parts.append("\t".join(cells))
+
+            # Extract headers and footers
+            for section in doc.sections:
+                for header_part in [section.header, section.first_page_header]:
+                    if header_part and header_part.paragraphs:
+                        header_text = " ".join(p.text.strip() for p in header_part.paragraphs if p.text.strip())
+                        if header_text:
+                            parts.insert(0, f"[Header] {header_text}")
+                for footer_part in [section.footer, section.first_page_footer]:
+                    if footer_part and footer_part.paragraphs:
+                        footer_text = " ".join(p.text.strip() for p in footer_part.paragraphs if p.text.strip())
+                        if footer_text:
+                            parts.append(f"[Footer] {footer_text}")
+
+            return _truncate("\n".join(parts))
         except Exception as e:
             logger.warning("docx_extract_failed", filepath=str(filepath), error=str(e))
             return None
