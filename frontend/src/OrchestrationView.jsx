@@ -518,6 +518,7 @@ const TOOL_DESCRIPTIONS = {
   read_xlsx: 'Read an Excel spreadsheet with column stats',
   read_csv: 'Read a CSV/TSV file with auto-detection',
   read_code: 'Read source code with line numbers and structure',
+  read_pptx: 'Read PowerPoint presentations with slides, notes, tables',
   // File management
   file_manager: 'List, copy, zip, unzip, find files and directories',
   file_move: 'Move or rename a file or directory',

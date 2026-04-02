@@ -67,7 +67,7 @@ class ToolRegistry:
             PdfReaderTool,
         )
         from hydra.tools.language_tools import TranslationTool, SummarizerTool
-        from hydra.tools.reader_tools import ReadDocxTool, ReadXlsxTool, ReadCsvTool, ReadCodeTool
+        from hydra.tools.reader_tools import ReadDocxTool, ReadXlsxTool, ReadCsvTool, ReadCodeTool, ReadPptxTool
         from hydra.tools.file_manager_tools import FileManagerTool, FileMoveTool, FileDeleteTool
         from hydra.tools.template_tools import TemplateRenderTool
         from hydra.tools.pdf_tools import PdfMergeTool, PdfSplitTool
@@ -110,6 +110,7 @@ class ToolRegistry:
             ReadXlsxTool(output_dir=output_dir),
             ReadCsvTool(output_dir=output_dir),
             ReadCodeTool(output_dir=output_dir),
+            ReadPptxTool(output_dir=output_dir),
             # File management
             FileManagerTool(output_dir=output_dir),
             FileMoveTool(output_dir=output_dir),

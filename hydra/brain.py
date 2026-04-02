@@ -152,6 +152,7 @@ class Brain:
                 "- `read_xlsx` — structured data with column stats, multi-sheet support\n"
                 "- `read_csv` — auto-detect encoding and delimiter\n"
                 "- `read_code` — line numbers, language detection, structure map\n"
+                "- `read_pptx` — slides text, speaker notes, tables, metadata\n"
                 "- `read_pdf` — full PDF text extraction\n\n"
                 "File paths are available in the task context. When an agent needs detailed "
                 "or structured file content (especially tables, numbers, or specific sections), "

@@ -624,3 +624,131 @@ class ReadCodeTool(BaseTool):
         except Exception as exc:
             logger.error("read_code_failed", file_path=file_path, error=str(exc))
             return ToolResult(success=False, error=f"Failed to read code file: {exc}")
+
+
+# ── read_pptx ─────────────────────────────────────────────────────────────────
+
+
+class ReadPptxTool(BaseTool):
+    """Read a PowerPoint (.pptx) presentation with structured extraction."""
+
+    name = "read_pptx"
+    description = (
+        "Read a PowerPoint (.pptx) presentation. Extracts slide text with "
+        "slide numbers, speaker notes, table content, and presentation metadata. "
+        "Use for ingesting presentations, pitch decks, training materials."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the .pptx file.",
+            },
+            "extract": {
+                "type": "string",
+                "enum": ["all", "text_only", "notes_only", "metadata_only"],
+                "description": "What to extract. Default: all.",
+                "default": "all",
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "Truncate text output at this many characters. Default: 50000.",
+                "default": 50000,
+            },
+        },
+        "required": ["file_path"],
+    }
+
+    def __init__(self, output_dir: str = "./hydra_output", state_manager: "StateManager | None" = None) -> None:
+        self._output_dir = output_dir
+        self._state_manager = state_manager
+
+    async def execute(
+        self, file_path: str, extract: str = "all", max_chars: int = 50000
+    ) -> ToolResult:
+        try:
+            from pptx import Presentation
+
+            path = safe_read_path(file_path, allowed_roots=[self._output_dir, Path.cwd()])
+            prs = Presentation(str(path))
+            result: dict = {}
+
+            if extract in ("all", "text_only"):
+                slides_data = []
+                for i, slide in enumerate(prs.slides, 1):
+                    slide_text = []
+                    tables = []
+
+                    for shape in slide.shapes:
+                        # Text frames (titles, body text, text boxes)
+                        if shape.has_text_frame:
+                            for para in shape.text_frame.paragraphs:
+                                text = para.text.strip()
+                                if text:
+                                    slide_text.append(text)
+
+                        # Tables
+                        if shape.has_table:
+                            table_rows = []
+                            for row in shape.table.rows:
+                                row_data = [cell.text.strip() for cell in row.cells]
+                                table_rows.append(row_data)
+                            if table_rows:
+                                headers = table_rows[0]
+                                data_rows = [
+                                    {headers[j] if j < len(headers) else f"col_{j}": val
+                                     for j, val in enumerate(row)}
+                                    for row in table_rows[1:]
+                                ]
+                                tables.append({"headers": headers, "rows": data_rows})
+
+                    slide_entry: dict = {
+                        "slide_number": i,
+                        "text": "\n".join(slide_text),
+                    }
+                    if tables:
+                        slide_entry["tables"] = tables
+
+                    slides_data.append(slide_entry)
+
+                result["slides"] = slides_data
+                result["total_slides"] = len(prs.slides)
+
+                # Flatten for text preview
+                all_text = []
+                for s in slides_data:
+                    all_text.append(f"[Slide {s['slide_number']}] {s['text']}")
+                full_text = "\n".join(all_text)
+                result["text"] = full_text[:max_chars]
+                result["truncated"] = len(full_text) > max_chars
+
+            if extract in ("all", "notes_only"):
+                notes = []
+                for i, slide in enumerate(prs.slides, 1):
+                    if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                        note_text = slide.notes_slide.notes_text_frame.text.strip()
+                        if note_text:
+                            notes.append({"slide_number": i, "notes": note_text})
+                result["speaker_notes"] = notes
+
+            if extract in ("all", "metadata_only"):
+                props = prs.core_properties
+                result["metadata"] = {
+                    "author": props.author,
+                    "title": props.title,
+                    "subject": props.subject,
+                    "created": str(props.created) if props.created else None,
+                    "modified": str(props.modified) if props.modified else None,
+                    "last_modified_by": props.last_modified_by,
+                    "revision": props.revision,
+                }
+
+            logger.info("read_pptx_success", file_path=file_path, slides=len(prs.slides))
+            return ToolResult(success=True, data=result)
+
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
+        except Exception as exc:
+            logger.error("read_pptx_failed", file_path=file_path, error=str(exc))
+            return ToolResult(success=False, error=f"Failed to read PPTX: {exc}")
