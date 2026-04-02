@@ -122,7 +122,23 @@ class ExecutionEngine:
         max_retries = agent.sub_task.max_retries if agent.sub_task.retry_allowed else 0
         backoff = self.config.retry_backoff_base
         last_error: str = ""
-        extra_context = ""
+
+        # Inject uploaded file context so every agent knows about attached files
+        file_context = ""
+        uploaded_files = await self.state_manager.get_files()
+        if uploaded_files:
+            file_lines = ["Uploaded files available for this task:"]
+            for f in uploaded_files:
+                file_lines.append(f"- {f.original_name} → path: {f.filepath}")
+                if f.extracted_text:
+                    preview = f.extracted_text[:300]
+                    if len(f.extracted_text) > 300:
+                        preview += "..."
+                    file_lines.append(f"  Preview: {preview}")
+            file_lines.append("Use reader tools (read_docx, read_xlsx, read_csv, read_code, read_pdf) for full structured access.")
+            file_context = "\n".join(file_lines)
+
+        extra_context = file_context
 
         for attempt in range(max_retries + 1):
             if attempt > 0:
@@ -141,7 +157,8 @@ class ExecutionEngine:
                     ))
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)  # Cap at 30s
-                extra_context = f"Previous attempt failed: {last_error}\nPlease try a different approach."
+                retry_msg = f"Previous attempt failed: {last_error}\nPlease try a different approach."
+                extra_context = f"{file_context}\n\n{retry_msg}" if file_context else retry_msg
 
             output = await self._execute_single(agent, extra_context)
 
