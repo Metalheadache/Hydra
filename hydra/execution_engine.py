@@ -61,7 +61,18 @@ class ExecutionEngine:
 
         for group_index, group in enumerate(self.plan.execution_groups):
             if self._budget_exceeded:
-                logger.error("token_budget_exceeded_aborting", group=group_index)
+                logger.error(
+                    "token_budget_exceeded_aborting",
+                    group=group_index,
+                    tokens_used=self._total_tokens_used,
+                    budget=self.config.total_token_budget,
+                )
+                if self.event_bus:
+                    from hydra.events import EventType, HydraEvent
+                    await self.event_bus.emit(HydraEvent(
+                        type=EventType.PIPELINE_ERROR,
+                        data={"error": f"Token budget exceeded ({self._total_tokens_used:,} / {self.config.total_token_budget:,}). Remaining groups skipped."},
+                    ))
                 break
 
             logger.info("group_starting", group_index=group_index, sub_tasks=group)
