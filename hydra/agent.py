@@ -261,6 +261,7 @@ class Agent:
                 # Use stream=True to emit AGENT_TOKEN events for each chunk.
                 stream_kwargs = dict(call_kwargs)
                 stream_kwargs["stream"] = True
+                stream_kwargs["stream_options"] = {"include_usage": True}
 
                 llm_start_ms = int(time.monotonic() * 1000)
                 stream_response = await litellm.acompletion(**stream_kwargs)

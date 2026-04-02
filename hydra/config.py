@@ -19,15 +19,15 @@ class HydraConfig(BaseSettings):
     api_key: str = Field(default="", description="Provider API key (Anthropic, OpenAI, etc.)")
     api_base: str | None = Field(default=None, description="Custom API endpoint URL (for self-hosted/enterprise)")
     default_model: str = Field(
-        default="anthropic/claude-sonnet-4-6",
-        description="litellm model string (e.g. anthropic/claude-sonnet-4-6, gpt-4o, ollama/llama3)",
+        default="deepseek/deepseek-chat",
+        description="litellm model string (e.g. deepseek/deepseek-chat, anthropic/claude-sonnet-4-6, gpt-4o)",
     )
     brain_model: str = Field(
-        default="anthropic/claude-sonnet-4-6",
+        default="deepseek/deepseek-chat",
         description="Model used for task decomposition (Brain). Can be more capable than default.",
     )
     post_brain_model: str = Field(
-        default="anthropic/claude-sonnet-4-6",
+        default="deepseek/deepseek-chat",
         description="Model used for synthesis and quality scoring (Post-Brain).",
     )
     max_tokens_per_agent: int = Field(default=4096, description="Max tokens for each agent LLM call.")
@@ -36,8 +36,8 @@ class HydraConfig(BaseSettings):
 
     # ── Execution ─────────────────────────────────────────────────────────────
     max_concurrent_agents: int = Field(default=5, ge=1, le=50, description="Max number of agents running simultaneously.")
-    per_agent_timeout_seconds: int = Field(default=60, gt=0, le=3600, description="Timeout (seconds) per agent execution.")
-    total_task_timeout_seconds: int = Field(default=600, gt=0, le=7200, description="Total timeout for the entire task pipeline.")
+    per_agent_timeout_seconds: int = Field(default=300, gt=0, le=3600, description="Timeout (seconds) per agent execution.")
+    total_task_timeout_seconds: int = Field(default=1200, gt=0, le=7200, description="Total timeout for the entire task pipeline.")
     total_token_budget: int = Field(default=100_000, ge=1000, le=10_000_000, description="Abort if total token usage exceeds this budget.")
 
     # ── Tool Loop ─────────────────────────────────────────────────────────────

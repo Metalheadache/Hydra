@@ -15,12 +15,12 @@ const DEFAULT_SETTINGS = {
   apiBaseUrl: '',
   serverToken: '',
   apiKey: '',
-  model: 'anthropic/claude-sonnet-4-6',
-  brainModel: 'anthropic/claude-sonnet-4-6',
-  postBrainModel: 'anthropic/claude-sonnet-4-6',
+  model: 'deepseek/deepseek-chat',
+  brainModel: 'deepseek/deepseek-chat',
+  postBrainModel: 'deepseek/deepseek-chat',
   maxConcurrentAgents: 5,
-  perAgentTimeout: 60,
-  totalTaskTimeout: 600,
+  perAgentTimeout: 300,
+  totalTaskTimeout: 1200,
   temperature: 0.4,
   qualityScoreThreshold: 5.0,
   outputDirectory: './hydra_output',
@@ -32,10 +32,10 @@ const DEFAULT_SETTINGS = {
 
 // ─── Strategy presets ────────────────────────────────────────────────────────
 const STRATEGY_PRESETS = {
-  balanced: { label: 'Balanced', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 5, perAgentTimeout: 60, totalTaskTimeout: 600, qualityScoreThreshold: 5.0 },
-  fast: { label: 'Fast', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 8, perAgentTimeout: 30, totalTaskTimeout: 300, qualityScoreThreshold: 3.0 },
-  high_quality: { label: 'High Quality', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 3, perAgentTimeout: 120, totalTaskTimeout: 900, qualityScoreThreshold: 7.0 },
-  cost_aware: { label: 'Cost Aware', model: 'deepseek/deepseek-chat', maxConcurrentAgents: 5, perAgentTimeout: 60, totalTaskTimeout: 600, qualityScoreThreshold: 4.0 },
+  balanced: { label: 'Balanced', model: 'deepseek/deepseek-chat', maxConcurrentAgents: 5, perAgentTimeout: 300, totalTaskTimeout: 1200, qualityScoreThreshold: 5.0 },
+  fast: { label: 'Fast', model: 'deepseek/deepseek-chat', maxConcurrentAgents: 8, perAgentTimeout: 120, totalTaskTimeout: 600, qualityScoreThreshold: 3.0 },
+  high_quality: { label: 'High Quality', model: 'anthropic/claude-sonnet-4-6', maxConcurrentAgents: 3, perAgentTimeout: 300, totalTaskTimeout: 1800, qualityScoreThreshold: 7.0 },
+  cost_aware: { label: 'Cost Aware', model: 'deepseek/deepseek-chat', maxConcurrentAgents: 5, perAgentTimeout: 300, totalTaskTimeout: 1200, qualityScoreThreshold: 4.0 },
 };
 
 function detectStrategy(settings) {
