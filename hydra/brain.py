@@ -144,11 +144,18 @@ class Brain:
         if has_files:
             file_context_section = (
                 "\n## Attached Files\n"
-                "The user has attached files. Their content has been extracted where possible "
-                "and is included in the task description above.\n"
-                "When designing agents, assign appropriate reader tools (read_pdf, etc.) only if "
-                "the extracted text is insufficient or truncated. "
-                "File paths are available for direct tool access.\n"
+                "The user has attached files. A text preview has been extracted and included "
+                "in the task description above, but it may be incomplete (tables simplified, "
+                "formatting lost, scanned PDFs may be empty).\n\n"
+                "**Agents can read the ORIGINAL files directly** using these tools:\n"
+                "- `read_docx` — full text with heading structure, tables as key-value rows, metadata\n"
+                "- `read_xlsx` — structured data with column stats, multi-sheet support\n"
+                "- `read_csv` — auto-detect encoding and delimiter\n"
+                "- `read_code` — line numbers, language detection, structure map\n"
+                "- `read_pdf` — full PDF text extraction\n\n"
+                "File paths are available in the task context. When an agent needs detailed "
+                "or structured file content (especially tables, numbers, or specific sections), "
+                "assign the appropriate reader tool and instruct the agent to read the original file.\n"
             )
 
         return (
