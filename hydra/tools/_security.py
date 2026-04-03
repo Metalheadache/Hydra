@@ -125,7 +125,10 @@ def is_ssrf_target_sync(url: str) -> bool:
         parsed = httpx.URL(url)
         host = parsed.host
     except Exception:
-        return False
+        return True  # deny by default on parse failure
+
+    if not host:
+        return True  # deny URLs with no host
 
     if host.lower() in _BLOCKED_HOSTNAMES:
         return True
@@ -165,7 +168,10 @@ async def is_ssrf_target(url: str) -> bool:
         parsed = httpx.URL(url)
         host = parsed.host
     except Exception:
-        return False
+        return True  # deny by default on parse failure
+
+    if not host:
+        return True  # deny URLs with no host
 
     if host.lower() in _BLOCKED_HOSTNAMES:
         return True
