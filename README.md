@@ -164,7 +164,7 @@ python -m hydra --host 0.0.0.0 --port 8000
 | `GET` | `/` | Serve web UI |
 | `GET` | `/api/config` | Current config (API key redacted) |
 | `POST` | `/api/config` | Update config at runtime |
-| `GET` | `/api/tools` | List all 22 registered tools |
+| `GET` | `/api/tools` | List registered tools |
 | `GET` | `/api/models` | Suggested model list |
 | `POST` | `/api/upload` | Upload files for processing |
 | `POST` | `/api/task` | Run task (REST, non-streaming) |
@@ -520,4 +520,5 @@ hydra.tool_registry.register(MyTool())
 
 ## License
 
+MIT
 MIT

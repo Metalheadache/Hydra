@@ -135,14 +135,17 @@ class RunPythonTool(BaseTool):
             stderr_text = stderr.decode("utf-8", errors="replace")
 
             # H4: Copy created files to output_directory before temp dir is cleaned up
+            # Prefix filenames with a short unique ID to prevent overwrites across runs
             # (os imported at module level)
+            import uuid as _uuid
+            run_prefix = _uuid.uuid4().hex[:8]
             output_dir = Path(os.environ.get("HYDRA_OUTPUT_DIRECTORY", "./hydra_output"))
             output_dir.mkdir(parents=True, exist_ok=True)
             created_files_paths: list[str] = []
             for fname in created_files:
                 src = Path(tmp_dir) / fname
                 if src.exists():
-                    dest = output_dir / fname
+                    dest = output_dir / f"{run_prefix}_{fname}"
                     shutil.copy2(str(src), str(dest))
                     created_files_paths.append(str(dest))
 

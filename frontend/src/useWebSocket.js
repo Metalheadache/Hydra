@@ -145,6 +145,8 @@ export function useWebSocket() {
 
   /**
    * Connect to the backend and start a task.
+   * Note: apiBaseUrl is the LLM provider URL (passed via config_overrides),
+   * NOT the Hydra server URL. WebSocket/REST always use window.location.origin.
    */
   const connect = useCallback(({
     apiBaseUrl,
