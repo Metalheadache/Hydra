@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydra-agents"
-version = "0.1.0"
+version = "1.0.0"
 description = "Dynamic multi-agent orchestration framework powered by litellm"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -55,6 +55,9 @@ Issues = "https://github.com/Metalheadache/Hydra/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["hydra*"]
+
+[tool.setuptools.package-data]
+hydra = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
