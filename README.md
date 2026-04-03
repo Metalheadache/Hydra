@@ -521,4 +521,3 @@ hydra.tool_registry.register(MyTool())
 ## License
 
 MIT
-MIT
