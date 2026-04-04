@@ -18,7 +18,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🔄 **Retry + Quality Gate** — Failed agents retry with exponential backoff; LLM quality scoring (1-10) with automatic re-dispatch
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
 - 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
-- 🔧 **33 Built-in Tools** — Document generation, file reading (.doc/.docx/.xlsx/.csv/.pptx/.pdf/code), file management, research, data analysis, code execution, memory, translation, templates, PDF operations, validation
+- 🔧 **30+ Built-in Tools** — Document generation, file reading (.doc/.docx/.xlsx/.csv/.pptx/.pdf/code), file management, research, data analysis, code execution, memory, translation, templates, PDF operations, validation
 - 📎 **Smart File Handling** — Uploaded files auto-extracted for context; agents can re-read originals with reader tools for full structured access (tables, headings, metadata)
 - 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval with risk badges, keyboard shortcuts, auto-timeout, and confirmation queue
 - 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
@@ -28,7 +28,17 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 
 ## Quick Start
 
-### Option 1: Web UI (recommended)
+### Option 1: pip install (recommended)
+
+```bash
+pip install hydra-agents
+hydra-agents serve
+# → Auto-opens http://localhost:8000
+```
+
+Configure your LLM provider in the Settings panel (gear icon), then type a task and watch the agents work.
+
+### Option 2: From source (for development)
 
 ```bash
 git clone https://github.com/Metalheadache/Hydra.git
@@ -40,13 +50,9 @@ cd frontend && npm install && npx vite build && cd ..
 
 # Start server (auto-opens browser)
 hydra-agents serve
-# Or: python -m hydra_agents serve
-# → Open http://localhost:8000
 ```
 
-Configure your LLM provider in the Settings panel (gear icon), then type a task and watch the agents work.
-
-### Option 2: Python API
+### Option 3: Python API
 
 ```python
 import asyncio
@@ -64,7 +70,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Option 3: Streaming API
+### Option 4: Streaming API
 
 ```python
 async def main():
@@ -85,7 +91,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Option 4: With File Attachments
+### Option 5: With File Attachments
 
 ```python
 result = await hydra.run(
@@ -94,7 +100,7 @@ result = await hydra.run(
 )
 ```
 
-### Option 5: Callbacks
+### Option 6: Callbacks
 
 ```python
 hydra = Hydra()
@@ -297,7 +303,7 @@ Token budgeting prevents context overflow. Long outputs are truncated with refer
 
 ---
 
-## Built-in Tools (33)
+## Built-in Tools
 
 ### 📄 File Writing
 | Tool | Description |
@@ -456,7 +462,7 @@ Hydra extracts text from 30+ file formats for agent context:
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-# 292 tests covering core pipeline, security, streaming, events, server, history
+# 270+ tests covering core pipeline, security, streaming, events, server, history
 ```
 
 ---
@@ -500,21 +506,25 @@ hydra.tool_registry.register(MyTool())
 - [x] Export: clipboard + PDF + DOCX
 - [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
 - [x] Human-in-the-loop confirmation modal (queue, risk badges, auto-timeout, timeline)
-- [x] Tool expansion: 22 → 32 tools (readers, file manager, templates, PDF ops)
+- [x] Tool expansion: 22 → 33 tools (readers, file manager, templates, PDF ops)
 - [x] Settings: search config, test connection, validation, backend sync
 - [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
 - [x] Responsive polish (mobile/tablet/desktop)
 
-**Phase 5 ⬅️ NEXT:**
-- [ ] PyInstaller standalone executable (download → double-click → done)
-- [ ] PyPI package (`pip install hydra-agents`)
-- [ ] Vite build → FastAPI serves static
+**Phase 5 (Build & Deploy) — IN PROGRESS:**
+- [x] PyPI package (`pip install hydra-agents`)
+- [x] CLI entry point (`hydra-agents serve` / `hydra-agents run`)
+- [x] Auto-open browser on launch
+- [x] Frontend bundled in wheel
+- [ ] Docker image (multi-stage build)
+- [ ] CI/CD (GitHub Actions → PyPI on tag)
+- [ ] Standalone executable (PyInstaller, Windows)
 
-**Phase 6:**
+**Phase 6 (Future):**
 - [ ] MCP (Model Context Protocol) tool integration
 - [ ] Vector store / RAG tool
 - [ ] Data classification / sensitivity routing
-- [ ] Docker deployment with `--network none` sandboxing
+- [ ] Docker `--network none` sandboxing for code tools
 - [ ] Webhook triggers
 
 ---
