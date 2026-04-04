@@ -38,7 +38,7 @@ from hydra_agents.tool_registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __all__ = ["Hydra", "HydraConfig", "EventBus", "EventType", "HydraEvent"]
 
 
