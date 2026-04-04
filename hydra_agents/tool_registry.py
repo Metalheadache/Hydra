@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import structlog
 
-from hydra.tools.base import BaseTool
+from hydra_agents.tools.base import BaseTool
 
 logger = structlog.get_logger(__name__)
 
@@ -49,28 +49,28 @@ class ToolRegistry:
                     configured location.
         """
         # Import here to avoid circular imports at module load time
-        from hydra.tools.file_tools import (
+        from hydra_agents.tools.file_tools import (
             WriteMarkdownTool,
             WriteJsonTool,
             WriteCsvTool,
             WriteCodeTool,
         )
-        from hydra.tools.research_tools import WebSearchTool, WebFetchTool, HttpRequestTool
-        from hydra.tools.data_tools import JsonValidatorTool, ChartGeneratorTool, DataTransformTool
-        from hydra.tools.code_tools import RunPythonTool, RunShellTool
-        from hydra.tools.memory_tools import MemoryStoreTool, MemoryRetrieveTool
-        from hydra.tools.validation_tools import OutputValidatorTool, QualityScorerTool
-        from hydra.tools.document_tools import (
+        from hydra_agents.tools.research_tools import WebSearchTool, WebFetchTool, HttpRequestTool
+        from hydra_agents.tools.data_tools import JsonValidatorTool, ChartGeneratorTool, DataTransformTool
+        from hydra_agents.tools.code_tools import RunPythonTool, RunShellTool
+        from hydra_agents.tools.memory_tools import MemoryStoreTool, MemoryRetrieveTool
+        from hydra_agents.tools.validation_tools import OutputValidatorTool, QualityScorerTool
+        from hydra_agents.tools.document_tools import (
             WriteDocxTool,
             WriteXlsxTool,
             WritePptxTool,
             PdfReaderTool,
         )
-        from hydra.tools.language_tools import TranslationTool, SummarizerTool
-        from hydra.tools.reader_tools import ReadDocxTool, ReadXlsxTool, ReadCsvTool, ReadCodeTool, ReadPptxTool
-        from hydra.tools.file_manager_tools import FileManagerTool, FileMoveTool, FileDeleteTool
-        from hydra.tools.template_tools import TemplateRenderTool
-        from hydra.tools.pdf_tools import PdfMergeTool, PdfSplitTool
+        from hydra_agents.tools.language_tools import TranslationTool, SummarizerTool
+        from hydra_agents.tools.reader_tools import ReadDocxTool, ReadXlsxTool, ReadCsvTool, ReadCodeTool, ReadPptxTool
+        from hydra_agents.tools.file_manager_tools import FileManagerTool, FileMoveTool, FileDeleteTool
+        from hydra_agents.tools.template_tools import TemplateRenderTool
+        from hydra_agents.tools.pdf_tools import PdfMergeTool, PdfSplitTool
 
         output_dir = config.output_directory if config is not None else "./hydra_output"
 

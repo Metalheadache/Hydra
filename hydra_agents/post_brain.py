@@ -13,13 +13,13 @@ import jsonschema
 import litellm
 import structlog
 
-from hydra.models import AgentOutput, AgentStatus, TaskPlan
+from hydra_agents.models import AgentOutput, AgentStatus, TaskPlan
 
 if TYPE_CHECKING:
-    from hydra.audit import AuditLogger
-    from hydra.config import HydraConfig
-    from hydra.events import EventBus
-    from hydra.state_manager import StateManager
+    from hydra_agents.audit import AuditLogger
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.events import EventBus
+    from hydra_agents.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 
@@ -76,7 +76,7 @@ class PostBrain:
 
         # ── 2. LLM quality scoring ────────────────────────────────────────────
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.QUALITY_START,
                 data={"agents_to_score": len(all_outputs)},
@@ -89,7 +89,7 @@ class PostBrain:
                 f"(min={self.config.min_quality_score}) and is flagged for retry."
             )
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.QUALITY_RETRY,
                     sub_task_id=sub_task_id,
@@ -261,7 +261,7 @@ class PostBrain:
             )
 
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.QUALITY_SCORE,
                 sub_task_id=sub_task_id,
@@ -417,7 +417,7 @@ class PostBrain:
             call_kwargs["api_base"] = self.config.api_base
 
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.SYNTHESIS_START,
                 data={},
@@ -439,7 +439,7 @@ class PostBrain:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if delta and delta.content:
                         content_parts.append(delta.content)
-                        from hydra.events import EventType, HydraEvent
+                        from hydra_agents.events import EventType, HydraEvent
                         await self.event_bus.emit(HydraEvent(
                             type=EventType.SYNTHESIS_TOKEN,
                             data={"token": delta.content},
@@ -456,7 +456,7 @@ class PostBrain:
                 if synth_tokens_in == 0 and synth_tokens_out == 0:
                     synth_tokens_out = len(final_text) // 4  # rough chars-per-token estimate
 
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.SYNTHESIS_COMPLETE,
                     data={"length": len(final_text)},

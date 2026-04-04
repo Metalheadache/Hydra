@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from hydra.models import FileAttachment
+from hydra_agents.models import FileAttachment
 
 if TYPE_CHECKING:
     pass

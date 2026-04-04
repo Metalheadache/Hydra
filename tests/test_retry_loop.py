@@ -15,10 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra import Hydra
-from hydra.config import HydraConfig
-from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask, TaskPlan
-from hydra.state_manager import StateManager
+from hydra_agents import Hydra
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import AgentOutput, AgentSpec, AgentStatus, SubTask, TaskPlan
+from hydra_agents.state_manager import StateManager
 
 
 def make_config(**kwargs) -> HydraConfig:
@@ -74,11 +74,11 @@ async def test_no_retry_when_quality_ok():
     plan = make_plan(["st_1"])
 
     with (
-        patch("hydra.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
-        patch("hydra.agent_factory.AgentFactory.create_agents", return_value={}),
-        patch("hydra.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
+        patch("hydra_agents.agent_factory.AgentFactory.create_agents", return_value={}),
+        patch("hydra_agents.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
         patch(
-            "hydra.post_brain.PostBrain.synthesize",
+            "hydra_agents.post_brain.PostBrain.synthesize",
             new_callable=AsyncMock,
             return_value=_synth_result(agents_needing_retry=[]),
         ),
@@ -113,11 +113,11 @@ async def test_retry_triggered_when_quality_low():
     mock_execute_with_retry = AsyncMock()
 
     with (
-        patch("hydra.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
-        patch("hydra.agent_factory.AgentFactory.create_agents", return_value={}),
-        patch("hydra.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
-        patch("hydra.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
-        patch("hydra.post_brain.PostBrain.synthesize", side_effect=mock_synthesize),
+        patch("hydra_agents.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
+        patch("hydra_agents.agent_factory.AgentFactory.create_agents", return_value={}),
+        patch("hydra_agents.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
+        patch("hydra_agents.post_brain.PostBrain.synthesize", side_effect=mock_synthesize),
     ):
         result = await hydra._run_pipeline("Test retry task")
 
@@ -156,11 +156,11 @@ async def test_retry_is_single_cycle_only():
     mock_execute_with_retry = AsyncMock()
 
     with (
-        patch("hydra.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
-        patch("hydra.agent_factory.AgentFactory.create_agents", return_value={}),
-        patch("hydra.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
-        patch("hydra.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
-        patch("hydra.post_brain.PostBrain.synthesize", side_effect=always_needs_retry),
+        patch("hydra_agents.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
+        patch("hydra_agents.agent_factory.AgentFactory.create_agents", return_value={}),
+        patch("hydra_agents.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
+        patch("hydra_agents.post_brain.PostBrain.synthesize", side_effect=always_needs_retry),
     ):
         result = await hydra._run_pipeline("Test single cycle")
 
@@ -186,11 +186,11 @@ async def test_retry_metadata_always_present():
     plan = make_plan(["st_1"])
 
     with (
-        patch("hydra.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
-        patch("hydra.agent_factory.AgentFactory.create_agents", return_value={}),
-        patch("hydra.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
+        patch("hydra_agents.agent_factory.AgentFactory.create_agents", return_value={}),
+        patch("hydra_agents.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
         patch(
-            "hydra.post_brain.PostBrain.synthesize",
+            "hydra_agents.post_brain.PostBrain.synthesize",
             new_callable=AsyncMock,
             return_value=_synth_result(agents_needing_retry=[]),
         ),
@@ -220,11 +220,11 @@ async def test_retry_with_multiple_agents():
     mock_execute_with_retry = AsyncMock()
 
     with (
-        patch("hydra.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
-        patch("hydra.agent_factory.AgentFactory.create_agents", return_value={}),
-        patch("hydra.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
-        patch("hydra.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
-        patch("hydra.post_brain.PostBrain.synthesize", side_effect=mock_synthesize),
+        patch("hydra_agents.brain.Brain.plan", new_callable=AsyncMock, return_value=plan),
+        patch("hydra_agents.agent_factory.AgentFactory.create_agents", return_value={}),
+        patch("hydra_agents.execution_engine.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.execution_engine.ExecutionEngine._execute_with_retry", mock_execute_with_retry),
+        patch("hydra_agents.post_brain.PostBrain.synthesize", side_effect=mock_synthesize),
     ):
         result = await hydra._run_pipeline("Multi-agent retry")
 

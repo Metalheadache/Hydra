@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from hydra.tools.code_tools import RunShellTool
-from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
+from hydra_agents.tools.code_tools import RunShellTool
+from hydra_agents.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
 
 
 # ── Shell Injection Tests ─────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ async def test_path_traversal_sibling_directory_blocked():
 @pytest.mark.asyncio
 async def test_path_traversal_write_xlsx_blocked():
     """../../evil.xlsx path traversal must be blocked in WriteXlsxTool."""
-    from hydra.tools.document_tools import WriteXlsxTool
+    from hydra_agents.tools.document_tools import WriteXlsxTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = WriteXlsxTool(output_dir=tmpdir)
@@ -282,7 +282,7 @@ async def test_path_traversal_write_xlsx_blocked():
 @pytest.mark.asyncio
 async def test_path_traversal_write_pptx_blocked():
     """../../evil.pptx path traversal must be blocked in WritePptxTool."""
-    from hydra.tools.document_tools import WritePptxTool
+    from hydra_agents.tools.document_tools import WritePptxTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = WritePptxTool(output_dir=tmpdir)
@@ -299,7 +299,7 @@ async def test_path_traversal_write_pptx_blocked():
 @pytest.mark.asyncio
 async def test_pdf_reader_allowed_dirs_blocks():
     """PdfReaderTool must block access to paths outside allowed_dirs."""
-    from hydra.tools.document_tools import PdfReaderTool
+    from hydra_agents.tools.document_tools import PdfReaderTool
 
     tool = PdfReaderTool(allowed_dirs=["/tmp/safe_hydra_test"])
     result = await tool.execute(filepath="/etc/passwd")
@@ -317,7 +317,7 @@ async def test_pdf_reader_allowed_dirs_allows():
     except ImportError:
         pytest.skip("pymupdf not available")
 
-    from hydra.tools.document_tools import PdfReaderTool
+    from hydra_agents.tools.document_tools import PdfReaderTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_path = Path(tmpdir) / "test.pdf"
@@ -339,7 +339,7 @@ async def test_pdf_reader_allowed_dirs_allows():
 async def test_web_fetch_no_redirect_follow():
     """WebFetchTool must NOT follow redirects (follow_redirects=False)."""
     from unittest.mock import AsyncMock, MagicMock, patch
-    from hydra.tools.research_tools import WebFetchTool
+    from hydra_agents.tools.research_tools import WebFetchTool
 
     tool = WebFetchTool()
     captured_kwargs = {}
@@ -363,7 +363,7 @@ async def test_web_fetch_no_redirect_follow():
         async def __aexit__(self, *args):
             return False
 
-    with patch("hydra.tools.research_tools.httpx.AsyncClient", CapturingClient):
+    with patch("hydra_agents.tools.research_tools.httpx.AsyncClient", CapturingClient):
         await tool.execute(url="https://example.com")
 
     assert captured_kwargs.get("follow_redirects") is False, (
@@ -376,7 +376,7 @@ async def test_web_fetch_no_redirect_follow():
 @pytest.mark.asyncio
 async def test_data_transform_negative_limit_error():
     """DataTransformTool limit with count=-1 must return an error."""
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     data = [{"x": 1}, {"x": 2}, {"x": 3}]

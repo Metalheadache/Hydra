@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.agent import Agent
-from hydra.config import HydraConfig
-from hydra.models import AgentSpec, AgentStatus, SubTask
-from hydra.state_manager import StateManager
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.agent import Agent
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import AgentSpec, AgentStatus, SubTask
+from hydra_agents.state_manager import StateManager
+from hydra_agents.tool_registry import ToolRegistry
 
 
 def make_config() -> HydraConfig:
@@ -103,8 +103,8 @@ async def test_agent_tool_use_loop():
     2. Feed the result back.
     3. Continue until the LLM produces a final text response.
     """
-    from hydra.models import ToolResult
-    from hydra.tools.base import BaseTool
+    from hydra_agents.models import ToolResult
+    from hydra_agents.tools.base import BaseTool
 
     class EchoTool(BaseTool):
         name = "echo"
@@ -156,7 +156,7 @@ async def test_agent_with_upstream_context():
     registry = ToolRegistry()
 
     sm.register_role("st_1", "Upstream Agent")
-    from hydra.models import AgentOutput, AgentStatus
+    from hydra_agents.models import AgentOutput, AgentStatus
     await sm.write_output(
         "st_1",
         AgentOutput(

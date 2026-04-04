@@ -13,14 +13,14 @@ from typing import TYPE_CHECKING, Any
 import litellm
 import structlog
 
-from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask, ToolResult
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.models import AgentOutput, AgentSpec, AgentStatus, SubTask, ToolResult
+from hydra_agents.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from hydra.audit import AuditLogger
-    from hydra.config import HydraConfig
-    from hydra.events import EventBus
-    from hydra.state_manager import StateManager
+    from hydra_agents.audit import AuditLogger
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.events import EventBus
+    from hydra_agents.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 
@@ -114,7 +114,7 @@ class Agent:
         self._log.info("agent_starting", role=self.agent_spec.role)
 
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.AGENT_START,
                 agent_id=self.agent_spec.agent_id,
@@ -147,7 +147,7 @@ class Agent:
             await self.state_manager.write_output(self.agent_spec.sub_task_id, output)
 
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.AGENT_ERROR,
                     agent_id=self.agent_spec.agent_id,
@@ -182,7 +182,7 @@ class Agent:
         )
 
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.AGENT_COMPLETE,
                 agent_id=self.agent_spec.agent_id,
@@ -279,7 +279,7 @@ class Agent:
                     # Accumulate content and emit token events
                     if delta.content:
                         content_parts.append(delta.content)
-                        from hydra.events import EventType, HydraEvent
+                        from hydra_agents.events import EventType, HydraEvent
                         await self.event_bus.emit(HydraEvent(
                             type=EventType.AGENT_TOKEN,
                             agent_id=self.agent_spec.agent_id,
@@ -435,7 +435,7 @@ class Agent:
             self._log.info("tool_executing", tool=tool_name, args=list(kwargs.keys()))
 
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.AGENT_TOOL_CALL,
                     agent_id=self.agent_spec.agent_id,
@@ -456,7 +456,7 @@ class Agent:
                 # If the tool requires confirmation AND we have an event_bus,
                 # pause and wait for external approval.
                 if getattr(tool, "requires_confirmation", False) and self.event_bus:
-                    from hydra.events import EventType, HydraEvent
+                    from hydra_agents.events import EventType, HydraEvent
                     confirmation_id = str(uuid.uuid4())
                     timeout = self.config.per_agent_timeout_seconds
                     try:
@@ -526,7 +526,7 @@ class Agent:
             self._log.debug("tool_result", tool=tool_name, success=result.success)
 
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.AGENT_TOOL_RESULT,
                     agent_id=self.agent_spec.agent_id,

@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from hydra.agent import Agent
-from hydra.models import AgentOutput, AgentStatus, TaskPlan
+from hydra_agents.agent import Agent
+from hydra_agents.models import AgentOutput, AgentStatus, TaskPlan
 
 if TYPE_CHECKING:
-    from hydra.config import HydraConfig
-    from hydra.events import EventBus
-    from hydra.state_manager import StateManager
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.events import EventBus
+    from hydra_agents.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 
@@ -68,7 +68,7 @@ class ExecutionEngine:
                     budget=self.config.total_token_budget,
                 )
                 if self.event_bus:
-                    from hydra.events import EventType, HydraEvent
+                    from hydra_agents.events import EventType, HydraEvent
                     await self.event_bus.emit(HydraEvent(
                         type=EventType.PIPELINE_ERROR,
                         data={"error": f"Token budget exceeded ({self._total_tokens_used:,} / {self.config.total_token_budget:,}). Remaining groups skipped."},
@@ -79,7 +79,7 @@ class ExecutionEngine:
             group_start = time.monotonic()
 
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.GROUP_START,
                     group_index=group_index,
@@ -112,7 +112,7 @@ class ExecutionEngine:
             logger.info("group_done", group_index=group_index, elapsed_ms=elapsed_ms)
 
             if self.event_bus:
-                from hydra.events import EventType, HydraEvent
+                from hydra_agents.events import EventType, HydraEvent
                 await self.event_bus.emit(HydraEvent(
                     type=EventType.GROUP_COMPLETE,
                     group_index=group_index,
@@ -160,7 +160,7 @@ class ExecutionEngine:
                     backoff_s=backoff,
                 )
                 if self.event_bus:
-                    from hydra.events import EventType, HydraEvent
+                    from hydra_agents.events import EventType, HydraEvent
                     await self.event_bus.emit(HydraEvent(
                         type=EventType.AGENT_RETRY,
                         sub_task_id=sub_task_id,

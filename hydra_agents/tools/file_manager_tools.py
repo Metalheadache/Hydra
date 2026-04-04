@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from hydra.models import ToolResult
-from hydra.tools._security import ensure_dir, safe_read_path, safe_write_path
-from hydra.tools.base import BaseTool
+from hydra_agents.models import ToolResult
+from hydra_agents.tools._security import ensure_dir, safe_read_path, safe_write_path
+from hydra_agents.tools.base import BaseTool
 
 if TYPE_CHECKING:
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 

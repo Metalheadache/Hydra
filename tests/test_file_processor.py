@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from hydra.file_processor import FileProcessor, _MAX_EXTRACTED_CHARS, _TRUNCATION_MARKER
-from hydra.models import FileAttachment
+from hydra_agents.file_processor import FileProcessor, _MAX_EXTRACTED_CHARS, _TRUNCATION_MARKER
+from hydra_agents.models import FileAttachment
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -53,12 +53,12 @@ def test_mime_type_py(tmp_dir, processor):
 
 def test_mime_type_pdf(tmp_dir, processor):
     # Just check MIME detection — actual PDF requires valid bytes
-    from hydra.file_processor import _detect_mime
+    from hydra_agents.file_processor import _detect_mime
     assert _detect_mime(Path("report.pdf")) == "application/pdf"
 
 
 def test_mime_type_unknown(tmp_dir, processor):
-    from hydra.file_processor import _detect_mime
+    from hydra_agents.file_processor import _detect_mime
     # Unknown extension may return None or a guessed type — just ensure it doesn't crash
     result = _detect_mime(Path("archive.xyz"))
     # None or a string — both acceptable

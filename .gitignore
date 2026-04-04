@@ -31,3 +31,6 @@ TODO-frontend.md
 frontend-spec.md
 react-reference.js
 frontend/README.md
+
+# Bundled frontend (build artifact, generated from frontend/dist)
+hydra_agents/frontend_dist/

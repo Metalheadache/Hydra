@@ -7,8 +7,8 @@ import asyncio
 
 import pytest
 
-from hydra.models import AgentOutput, AgentStatus
-from hydra.state_manager import StateManager
+from hydra_agents.models import AgentOutput, AgentStatus
+from hydra_agents.state_manager import StateManager
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

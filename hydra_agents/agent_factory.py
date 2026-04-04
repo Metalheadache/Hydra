@@ -8,19 +8,19 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from hydra.agent import Agent
-from hydra.config import HydraConfig
-from hydra.models import AgentSpec, SubTask, TaskPlan
-from hydra.state_manager import StateManager
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.agent import Agent
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import AgentSpec, SubTask, TaskPlan
+from hydra_agents.state_manager import StateManager
+from hydra_agents.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from hydra.audit import AuditLogger
-    from hydra.events import EventBus
-from hydra.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
-from hydra.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
-from hydra.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool, PdfReaderTool
-from hydra.tools.data_tools import ChartGeneratorTool
+    from hydra_agents.audit import AuditLogger
+    from hydra_agents.events import EventBus
+from hydra_agents.tools.memory_tools import MemoryRetrieveTool, MemoryStoreTool
+from hydra_agents.tools.file_tools import WriteMarkdownTool, WriteJsonTool, WriteCsvTool, WriteCodeTool
+from hydra_agents.tools.document_tools import WriteDocxTool, WriteXlsxTool, WritePptxTool, PdfReaderTool
+from hydra_agents.tools.data_tools import ChartGeneratorTool
 
 logger = structlog.get_logger(__name__)
 

@@ -4,7 +4,7 @@ Hydra — Dynamic Multi-Agent Orchestration Framework.
 Usage::
 
     import asyncio
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     async def main():
         hydra = Hydra()
@@ -23,18 +23,18 @@ from typing import AsyncGenerator, Callable
 
 import structlog
 
-from hydra.agent_factory import AgentFactory
-from hydra.audit import AuditLogger
-from hydra.brain import Brain
-from hydra.config import HydraConfig
-from hydra.events import EventBus, EventType, HydraEvent
-from hydra.execution_engine import ExecutionEngine
-from hydra.file_processor import FileProcessor
-from hydra.logger import configure_logging
-from hydra.models import FileAttachment
-from hydra.post_brain import PostBrain
-from hydra.state_manager import StateManager
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.agent_factory import AgentFactory
+from hydra_agents.audit import AuditLogger
+from hydra_agents.brain import Brain
+from hydra_agents.config import HydraConfig
+from hydra_agents.events import EventBus, EventType, HydraEvent
+from hydra_agents.execution_engine import ExecutionEngine
+from hydra_agents.file_processor import FileProcessor
+from hydra_agents.logger import configure_logging
+from hydra_agents.models import FileAttachment
+from hydra_agents.post_brain import PostBrain
+from hydra_agents.state_manager import StateManager
+from hydra_agents.tool_registry import ToolRegistry
 
 logger = structlog.get_logger(__name__)
 
@@ -334,7 +334,7 @@ class Hydra:
             # Only skip re-synthesis if ALL agents explicitly failed (status == FAILED)
             # Agents with missing output (e.g. during testing or if execution engine
             # didn't write back) are treated as unknown → still re-synthesize
-            from hydra.models import AgentStatus
+            from hydra_agents.models import AgentStatus
             failed_retries = []
             for sub_task_id in agents_needing_retry:
                 output = await state.get_output(sub_task_id)

@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 import httpx
 import structlog
 
-from hydra.models import ToolResult
-from hydra.tools.base import BaseTool
+from hydra_agents.models import ToolResult
+from hydra_agents.tools.base import BaseTool
 
 if TYPE_CHECKING:
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
 import ipaddress
 import re as _re

@@ -10,7 +10,7 @@ from typing import List
 import pytest
 import pytest_asyncio
 
-from hydra.events import EventBus, EventType, HydraEvent
+from hydra_agents.events import EventBus, EventType, HydraEvent
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ async def test_hydra_on_agent_start_callback():
     """Hydra.on_agent_start registers a filtered callback."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     hydra = Hydra.__new__(Hydra)
     hydra._event_callbacks = []
@@ -194,7 +194,7 @@ async def test_hydra_on_agent_start_callback():
 @pytest.mark.asyncio
 async def test_hydra_on_agent_complete_callback():
     """Hydra.on_agent_complete registers a filtered callback."""
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     hydra = Hydra.__new__(Hydra)
     hydra._event_callbacks = []
@@ -215,7 +215,7 @@ async def test_hydra_on_agent_complete_callback():
 @pytest.mark.asyncio
 async def test_hydra_on_tool_call_callback():
     """Hydra.on_tool_call registers a filtered callback for AGENT_TOOL_CALL."""
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     hydra = Hydra.__new__(Hydra)
     hydra._event_callbacks = []
@@ -237,7 +237,7 @@ async def test_hydra_on_tool_call_callback():
 @pytest.mark.asyncio
 async def test_hydra_on_event_catch_all():
     """Hydra.on_event is a catch-all callback."""
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     hydra = Hydra.__new__(Hydra)
     hydra._event_callbacks = []

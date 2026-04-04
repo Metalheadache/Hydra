@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hydra.config import HydraConfig
-from hydra.execution_engine import ExecutionEngine
-from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask, TaskPlan
-from hydra.state_manager import StateManager
+from hydra_agents.config import HydraConfig
+from hydra_agents.execution_engine import ExecutionEngine
+from hydra_agents.models import AgentOutput, AgentSpec, AgentStatus, SubTask, TaskPlan
+from hydra_agents.state_manager import StateManager
 
 
 def make_config(**kwargs) -> HydraConfig:

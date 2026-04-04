@@ -14,7 +14,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_write_docx_creates_valid_file():
-    from hydra.tools.document_tools import WriteDocxTool
+    from hydra_agents.tools.document_tools import WriteDocxTool
     from docx import Document
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -40,7 +40,7 @@ async def test_write_docx_creates_valid_file():
 
 @pytest.mark.asyncio
 async def test_write_docx_adds_extension():
-    from hydra.tools.document_tools import WriteDocxTool
+    from hydra_agents.tools.document_tools import WriteDocxTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = WriteDocxTool(output_dir=tmpdir)
@@ -51,7 +51,7 @@ async def test_write_docx_adds_extension():
 
 @pytest.mark.asyncio
 async def test_write_docx_path_traversal_blocked():
-    from hydra.tools.document_tools import WriteDocxTool
+    from hydra_agents.tools.document_tools import WriteDocxTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = WriteDocxTool(output_dir=tmpdir)
@@ -64,7 +64,7 @@ async def test_write_docx_path_traversal_blocked():
 
 @pytest.mark.asyncio
 async def test_write_xlsx_creates_valid_file():
-    from hydra.tools.document_tools import WriteXlsxTool
+    from hydra_agents.tools.document_tools import WriteXlsxTool
     from openpyxl import load_workbook
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -94,7 +94,7 @@ async def test_write_xlsx_creates_valid_file():
 
 @pytest.mark.asyncio
 async def test_write_xlsx_from_data_dicts():
-    from hydra.tools.document_tools import WriteXlsxTool
+    from hydra_agents.tools.document_tools import WriteXlsxTool
     from openpyxl import load_workbook
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -113,7 +113,7 @@ async def test_write_xlsx_from_data_dicts():
 
 @pytest.mark.asyncio
 async def test_write_xlsx_no_data_returns_error():
-    from hydra.tools.document_tools import WriteXlsxTool
+    from hydra_agents.tools.document_tools import WriteXlsxTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = WriteXlsxTool(output_dir=tmpdir)
@@ -125,7 +125,7 @@ async def test_write_xlsx_no_data_returns_error():
 
 @pytest.mark.asyncio
 async def test_write_pptx_creates_valid_file():
-    from hydra.tools.document_tools import WritePptxTool
+    from hydra_agents.tools.document_tools import WritePptxTool
     from pptx import Presentation
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -145,7 +145,7 @@ async def test_write_pptx_creates_valid_file():
 
 @pytest.mark.asyncio
 async def test_write_pptx_correct_slide_count():
-    from hydra.tools.document_tools import WritePptxTool
+    from hydra_agents.tools.document_tools import WritePptxTool
     from pptx import Presentation
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -161,7 +161,7 @@ async def test_write_pptx_correct_slide_count():
 
 @pytest.mark.asyncio
 async def test_pdf_reader_handles_missing_file():
-    from hydra.tools.document_tools import PdfReaderTool
+    from hydra_agents.tools.document_tools import PdfReaderTool
 
     tool = PdfReaderTool()
     result = await tool.execute(filepath="/nonexistent/path/file.pdf")
@@ -171,7 +171,7 @@ async def test_pdf_reader_handles_missing_file():
 
 @pytest.mark.asyncio
 async def test_pdf_reader_rejects_non_pdf():
-    from hydra.tools.document_tools import PdfReaderTool
+    from hydra_agents.tools.document_tools import PdfReaderTool
 
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
         f.write(b"just a text file")
@@ -199,7 +199,7 @@ async def test_pdf_reader_reads_real_pdf():
         doc.save(str(pdf_path))
         doc.close()
 
-        from hydra.tools.document_tools import PdfReaderTool
+        from hydra_agents.tools.document_tools import PdfReaderTool
         tool = PdfReaderTool()
         result = await tool.execute(filepath=str(pdf_path))
         assert result.success, f"Expected success, got: {result.error}"
@@ -211,7 +211,7 @@ async def test_pdf_reader_reads_real_pdf():
 
 @pytest.mark.asyncio
 async def test_http_request_blocks_localhost():
-    from hydra.tools.research_tools import HttpRequestTool
+    from hydra_agents.tools.research_tools import HttpRequestTool
 
     tool = HttpRequestTool()
     for url in [
@@ -226,7 +226,7 @@ async def test_http_request_blocks_localhost():
 
 @pytest.mark.asyncio
 async def test_http_request_blocks_private_networks():
-    from hydra.tools.research_tools import HttpRequestTool
+    from hydra_agents.tools.research_tools import HttpRequestTool
 
     tool = HttpRequestTool()
     for url in [
@@ -241,7 +241,7 @@ async def test_http_request_blocks_private_networks():
 
 @pytest.mark.asyncio
 async def test_http_request_rejects_non_http_scheme():
-    from hydra.tools.research_tools import HttpRequestTool
+    from hydra_agents.tools.research_tools import HttpRequestTool
 
     tool = HttpRequestTool()
     result = await tool.execute(method="GET", url="ftp://example.com/file")
@@ -251,7 +251,7 @@ async def test_http_request_rejects_non_http_scheme():
 
 @pytest.mark.asyncio
 async def test_http_request_rejects_invalid_method():
-    from hydra.tools.research_tools import HttpRequestTool
+    from hydra_agents.tools.research_tools import HttpRequestTool
 
     tool = HttpRequestTool()
     result = await tool.execute(method="INVALID", url="https://example.com")
@@ -271,7 +271,7 @@ SAMPLE_DATA = [
 
 @pytest.mark.asyncio
 async def test_data_transform_filter():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -286,7 +286,7 @@ async def test_data_transform_filter():
 
 @pytest.mark.asyncio
 async def test_data_transform_filter_numeric():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -301,7 +301,7 @@ async def test_data_transform_filter_numeric():
 
 @pytest.mark.asyncio
 async def test_data_transform_sort_asc():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -316,7 +316,7 @@ async def test_data_transform_sort_asc():
 
 @pytest.mark.asyncio
 async def test_data_transform_sort_desc():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -331,7 +331,7 @@ async def test_data_transform_sort_desc():
 
 @pytest.mark.asyncio
 async def test_data_transform_group_by_count():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -347,7 +347,7 @@ async def test_data_transform_group_by_count():
 
 @pytest.mark.asyncio
 async def test_data_transform_group_by_sum():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -368,7 +368,7 @@ async def test_data_transform_group_by_sum():
 
 @pytest.mark.asyncio
 async def test_data_transform_select():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -382,7 +382,7 @@ async def test_data_transform_select():
 
 @pytest.mark.asyncio
 async def test_data_transform_limit():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -396,7 +396,7 @@ async def test_data_transform_limit():
 @pytest.mark.asyncio
 async def test_data_transform_pipeline():
     """Filter → sort → select → limit chain."""
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -417,7 +417,7 @@ async def test_data_transform_pipeline():
 
 @pytest.mark.asyncio
 async def test_data_transform_unknown_op_returns_error():
-    from hydra.tools.data_tools import DataTransformTool
+    from hydra_agents.tools.data_tools import DataTransformTool
 
     tool = DataTransformTool()
     result = await tool.execute(
@@ -431,7 +431,7 @@ async def test_data_transform_unknown_op_returns_error():
 
 @pytest.mark.asyncio
 async def test_chart_generator_bar():
-    from hydra.tools.data_tools import ChartGeneratorTool
+    from hydra_agents.tools.data_tools import ChartGeneratorTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = ChartGeneratorTool(output_dir=tmpdir)
@@ -447,7 +447,7 @@ async def test_chart_generator_bar():
 
 @pytest.mark.asyncio
 async def test_chart_generator_pie():
-    from hydra.tools.data_tools import ChartGeneratorTool
+    from hydra_agents.tools.data_tools import ChartGeneratorTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = ChartGeneratorTool(output_dir=tmpdir)
@@ -463,7 +463,7 @@ async def test_chart_generator_pie():
 
 @pytest.mark.asyncio
 async def test_chart_generator_invalid_type():
-    from hydra.tools.data_tools import ChartGeneratorTool
+    from hydra_agents.tools.data_tools import ChartGeneratorTool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tool = ChartGeneratorTool(output_dir=tmpdir)
@@ -479,7 +479,7 @@ async def test_chart_generator_invalid_type():
 # ── ToolRegistry integration ──────────────────────────────────────────────────
 
 def test_registry_registers_new_tools():
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.tool_registry import ToolRegistry
 
     registry = ToolRegistry()
     registry.register_defaults()
@@ -500,7 +500,7 @@ def test_registry_registers_new_tools():
 
 
 def test_registry_total_tool_count():
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.tool_registry import ToolRegistry
 
     registry = ToolRegistry()
     registry.register_defaults()

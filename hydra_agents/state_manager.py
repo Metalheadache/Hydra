@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from hydra.models import AgentOutput, AgentStatus, FileAttachment
+from hydra_agents.models import AgentOutput, AgentStatus, FileAttachment
 
 if TYPE_CHECKING:
-    from hydra.audit import AuditLogger
+    from hydra_agents.audit import AuditLogger
 
 logger = structlog.get_logger(__name__)
 

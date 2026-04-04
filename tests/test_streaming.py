@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.events import EventBus, EventType, HydraEvent
+from hydra_agents.events import EventBus, EventType, HydraEvent
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,10 +50,10 @@ async def _async_chunks(*chunks) -> AsyncIterator:
 @pytest.mark.asyncio
 async def test_agent_emits_agent_token_events():
     """Verify AGENT_TOKEN events are emitted for each streamed chunk."""
-    from hydra.agent import Agent
-    from hydra.config import HydraConfig
-    from hydra.models import AgentSpec, AgentStatus, SubTask, Priority
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.agent import Agent
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import AgentSpec, AgentStatus, SubTask, Priority
+    from hydra_agents.tool_registry import ToolRegistry
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
 
@@ -120,11 +120,11 @@ async def test_agent_emits_agent_token_events():
 @pytest.mark.asyncio
 async def test_agent_emits_tool_call_and_result_events():
     """AGENT_TOOL_CALL and AGENT_TOOL_RESULT events are emitted around tool calls."""
-    from hydra.agent import Agent
-    from hydra.config import HydraConfig
-    from hydra.models import AgentSpec, AgentStatus, SubTask, Priority, ToolResult
-    from hydra.tool_registry import ToolRegistry
-    from hydra.tools.base import BaseTool
+    from hydra_agents.agent import Agent
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import AgentSpec, AgentStatus, SubTask, Priority, ToolResult
+    from hydra_agents.tool_registry import ToolRegistry
+    from hydra_agents.tools.base import BaseTool
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
 
@@ -214,10 +214,10 @@ async def test_agent_emits_tool_call_and_result_events():
 
 @pytest.mark.asyncio
 async def test_hydra_stream_yields_pipeline_events():
-    """hydra.stream() yields PIPELINE_START and PIPELINE_COMPLETE events."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
-    from hydra.models import TaskPlan, SubTask, AgentSpec, Priority
+    """hydra_agents.stream() yields PIPELINE_START and PIPELINE_COMPLETE events."""
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import TaskPlan, SubTask, AgentSpec, Priority
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
     hydra = Hydra(config=config)
@@ -277,7 +277,7 @@ async def test_hydra_stream_yields_pipeline_events():
             return quality_response
 
     # Bypass Brain by patching Brain.plan directly to return our mock plan
-    with patch("hydra.brain.Brain.plan", AsyncMock(return_value=plan)), \
+    with patch("hydra_agents.brain.Brain.plan", AsyncMock(return_value=plan)), \
          patch("litellm.acompletion", side_effect=mock_acompletion):
 
         collected_events: List[HydraEvent] = []
@@ -296,9 +296,9 @@ async def test_hydra_stream_yields_pipeline_events():
 @pytest.mark.asyncio
 async def test_hydra_run_backward_compat():
     """run() still works and returns a dict (backward compatibility)."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
-    from hydra.models import TaskPlan, SubTask, AgentSpec, Priority
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import TaskPlan, SubTask, AgentSpec, Priority
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
     hydra = Hydra(config=config)
@@ -343,7 +343,7 @@ async def test_hydra_run_backward_compat():
         else:
             return quality_response
 
-    with patch("hydra.brain.Brain.plan", AsyncMock(return_value=plan)), \
+    with patch("hydra_agents.brain.Brain.plan", AsyncMock(return_value=plan)), \
          patch("litellm.acompletion", side_effect=mock_acompletion):
 
         result = await hydra.run("Simple test")
@@ -360,9 +360,9 @@ async def test_hydra_run_backward_compat():
 @pytest.mark.asyncio
 async def test_hydra_stream_yields_synthesis_tokens():
     """SYNTHESIS_TOKEN events appear in the stream."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
-    from hydra.models import TaskPlan, SubTask, AgentSpec, Priority
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import TaskPlan, SubTask, AgentSpec, Priority
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
     hydra = Hydra(config=config)
@@ -411,7 +411,7 @@ async def test_hydra_stream_yields_synthesis_tokens():
             return _async_chunks(*agent_chunks)
         return quality_response
 
-    with patch("hydra.brain.Brain.plan", AsyncMock(return_value=plan)), \
+    with patch("hydra_agents.brain.Brain.plan", AsyncMock(return_value=plan)), \
          patch("litellm.acompletion", side_effect=mock_acompletion):
 
         synthesis_token_events = []

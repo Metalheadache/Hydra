@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.brain import Brain, _extract_json
-from hydra.config import HydraConfig
-from hydra.models import TaskPlan
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.brain import Brain, _extract_json
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import TaskPlan
+from hydra_agents.tool_registry import ToolRegistry
 
 
 def make_config() -> HydraConfig:

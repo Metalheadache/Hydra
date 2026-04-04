@@ -11,11 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.audit import AuditLogger
-from hydra.config import HydraConfig
-from hydra.models import AgentSpec, AgentStatus, SubTask
-from hydra.state_manager import StateManager
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.audit import AuditLogger
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import AgentSpec, AgentStatus, SubTask
+from hydra_agents.state_manager import StateManager
+from hydra_agents.tool_registry import ToolRegistry
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ def test_log_quality_score(logger, tmp_dir):
 
 def test_no_crash_when_audit_logger_is_none():
     """Components that accept audit_logger=None should not crash."""
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
 
     # StateManager with no audit_logger must still work normally
     sm = StateManager(audit_logger=None)
@@ -291,7 +291,7 @@ async def test_state_manager_audit_write_output():
         al = AuditLogger(tmpdir)
         sm = StateManager(audit_logger=al)
 
-        from hydra.models import AgentOutput
+        from hydra_agents.models import AgentOutput
         output = AgentOutput(
             agent_id="a1",
             sub_task_id="st_1",
@@ -324,7 +324,7 @@ async def test_state_manager_audit_write_shared():
 async def test_state_manager_no_audit_logger_works_normally():
     """StateManager without audit_logger should work exactly as before."""
     sm = StateManager()  # No audit_logger — backward compatible
-    from hydra.models import AgentOutput
+    from hydra_agents.models import AgentOutput
     output = AgentOutput(
         agent_id="a1",
         sub_task_id="st_1",
@@ -358,7 +358,7 @@ def make_llm_response(content: str, tool_calls=None):
 @pytest.mark.asyncio
 async def test_agent_logs_llm_call_to_audit():
     """Agent should log each LLM call to the audit logger."""
-    from hydra.agent import Agent
+    from hydra_agents.agent import Agent
 
     with tempfile.TemporaryDirectory() as tmpdir:
         al = AuditLogger(tmpdir)
@@ -389,9 +389,9 @@ async def test_agent_logs_llm_call_to_audit():
 @pytest.mark.asyncio
 async def test_agent_logs_tool_execution_to_audit():
     """Agent should log each tool execution to the audit logger."""
-    from hydra.agent import Agent
-    from hydra.models import ToolResult
-    from hydra.tools.base import BaseTool
+    from hydra_agents.agent import Agent
+    from hydra_agents.models import ToolResult
+    from hydra_agents.tools.base import BaseTool
 
     class SimpleTool(BaseTool):
         name = "simple_tool"

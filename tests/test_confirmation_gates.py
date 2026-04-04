@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.agent import Agent
-from hydra.config import HydraConfig
-from hydra.events import EventBus, EventType, HydraEvent
-from hydra.models import AgentSpec, AgentStatus, SubTask, ToolResult
-from hydra.tool_registry import ToolRegistry
-from hydra.tools.base import BaseTool
+from hydra_agents.agent import Agent
+from hydra_agents.config import HydraConfig
+from hydra_agents.events import EventBus, EventType, HydraEvent
+from hydra_agents.models import AgentSpec, AgentStatus, SubTask, ToolResult
+from hydra_agents.tool_registry import ToolRegistry
+from hydra_agents.tools.base import BaseTool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ async def test_tool_without_confirmation_runs_normally():
     config = make_config()
     spec = make_spec(tools=["normal_tool"])
     sub_task = make_sub_task()
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
     sm = StateManager()
     registry = ToolRegistry()
     registry.register(NormalTool())
@@ -186,7 +186,7 @@ async def test_confirmation_tool_approved_executes():
     config = make_config()
     spec = make_spec(tools=["confirmation_tool"])
     sub_task = make_sub_task()
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
     sm = StateManager()
     registry = ToolRegistry()
     registry.register(ConfirmationTool())
@@ -227,7 +227,7 @@ async def test_confirmation_tool_rejected_returns_error():
     config = make_config()
     spec = make_spec(tools=["confirmation_tool"])
     sub_task = make_sub_task()
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
     sm = StateManager()
     registry = ToolRegistry()
     registry.register(ConfirmationTool())
@@ -279,7 +279,7 @@ async def test_confirmation_timeout_treated_as_rejected():
     config = HydraConfig(api_key="test-key", per_agent_timeout_seconds=1)
     spec = make_spec(tools=["confirmation_tool"])
     sub_task = make_sub_task()
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
     sm = StateManager()
     registry = ToolRegistry()
     registry.register(ConfirmationTool())
@@ -318,7 +318,7 @@ async def test_confirmation_timeout_treated_as_rejected():
             raise asyncio.TimeoutError()
         return await original_wait_for(coro, timeout=timeout, **kwargs)
 
-    with patch("hydra.agent.asyncio.wait_for", side_effect=fast_timeout_wait_for):
+    with patch("hydra_agents.agent.asyncio.wait_for", side_effect=fast_timeout_wait_for):
         with patch("litellm.acompletion", new_callable=AsyncMock, side_effect=mock_llm):
             output = await agent.execute()
 
@@ -333,7 +333,7 @@ async def test_confirmation_tool_no_event_bus_runs_without_gate():
     config = make_config()
     spec = make_spec(tools=["confirmation_tool"])
     sub_task = make_sub_task()
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
     sm = StateManager()
     registry = ToolRegistry()
     registry.register(ConfirmationTool())
@@ -413,7 +413,7 @@ async def test_confirmation_required_event_emitted():
 @pytest.mark.asyncio
 async def test_rejected_confirmation_logged_to_audit():
     """When a confirmation is rejected, audit_logger.log_tool_execution should be called with success=False."""
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
 
     class ConfirmationTool(BaseTool):
         name = "confirm_tool"

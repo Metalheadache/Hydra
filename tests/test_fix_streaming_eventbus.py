@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.events import EventBus, EventType, HydraEvent
+from hydra_agents.events import EventBus, EventType, HydraEvent
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -54,10 +54,10 @@ async def _async_chunks(*chunks) -> AsyncIterator:
 @pytest.mark.asyncio
 async def test_agent_with_event_bus_uses_streaming():
     """Agent with event_bus must call litellm.acompletion with stream=True."""
-    from hydra.agent import Agent
-    from hydra.config import HydraConfig
-    from hydra.models import AgentSpec, SubTask, Priority
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.agent import Agent
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import AgentSpec, SubTask, Priority
+    from hydra_agents.tool_registry import ToolRegistry
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
     spec = AgentSpec(
@@ -109,10 +109,10 @@ async def test_agent_with_event_bus_uses_streaming():
 @pytest.mark.asyncio
 async def test_agent_without_event_bus_does_not_stream():
     """Agent without event_bus must call litellm.acompletion with stream=False (or omitted)."""
-    from hydra.agent import Agent
-    from hydra.config import HydraConfig
-    from hydra.models import AgentSpec, SubTask, Priority
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.agent import Agent
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.models import AgentSpec, SubTask, Priority
+    from hydra_agents.tool_registry import ToolRegistry
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini")
     spec = AgentSpec(
@@ -240,8 +240,8 @@ async def test_eventbus_close_drains_before_sentinel():
 @pytest.mark.asyncio
 async def test_stream_timeout_emits_pipeline_error():
     """stream() must emit PIPELINE_ERROR event when pipeline times out."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
 
     # 1 second timeout
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini", total_task_timeout_seconds=1)
@@ -270,8 +270,8 @@ async def test_stream_timeout_emits_pipeline_error():
 @pytest.mark.asyncio
 async def test_stream_timeout_cancels_pipeline_task():
     """stream() must cancel the pipeline task on timeout."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
 
     config = HydraConfig(api_key="test-key", default_model="openai/gpt-4o-mini", total_task_timeout_seconds=1)
     hydra = Hydra(config=config)

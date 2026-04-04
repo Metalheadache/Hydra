@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any
 import litellm
 import structlog
 
-from hydra.config import HydraConfig
-from hydra.models import TaskPlan
-from hydra.tool_registry import ToolRegistry
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import TaskPlan
+from hydra_agents.tool_registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from hydra.events import EventBus
+    from hydra_agents.events import EventBus
 
 logger = structlog.get_logger(__name__)
 
@@ -78,7 +78,7 @@ class Brain:
         logger.info("brain_planning", task_preview=task[:120])
 
         if self.event_bus:
-            from hydra.events import EventType, HydraEvent
+            from hydra_agents.events import EventType, HydraEvent
             await self.event_bus.emit(HydraEvent(
                 type=EventType.BRAIN_START,
                 data={"task_preview": task[:120]},
@@ -106,7 +106,7 @@ class Brain:
                 logger.info("brain_plan_ready", sub_tasks=len(plan.sub_tasks), groups=len(plan.execution_groups))
 
                 if self.event_bus:
-                    from hydra.events import EventType, HydraEvent
+                    from hydra_agents.events import EventType, HydraEvent
                     await self.event_bus.emit(HydraEvent(
                         type=EventType.BRAIN_COMPLETE,
                         # H5: include plan structure so frontend can build agent cards

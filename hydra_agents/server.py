@@ -2,11 +2,11 @@
 Hydra FastAPI Server — REST + WebSocket API for the Hydra framework.
 
 Start with:
-    python -m hydra.server          (default host=0.0.0.0, port=8000)
-    python -m hydra.server --port 9000
+    python -m hydra_agents.server          (default host=0.0.0.0, port=8000)
+    python -m hydra_agents.server --port 9000
 
 Or programmatically:
-    from hydra.server import start_server
+    from hydra_agents.server import start_server
     start_server(host="0.0.0.0", port=8000)
 """
 
@@ -27,12 +27,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from hydra.audit import AuditLogger
-from hydra.config import HydraConfig
-from hydra.events import EventBus, EventType, HydraEvent
-from hydra.file_processor import FileProcessor
-from hydra.history import HistoryDB
-from hydra import Hydra
+from hydra_agents.audit import AuditLogger
+from hydra_agents.config import HydraConfig
+from hydra_agents.events import EventBus, EventType, HydraEvent
+from hydra_agents.file_processor import FileProcessor
+from hydra_agents.history import HistoryDB
+from hydra_agents import Hydra
 
 # DOCX export (lazy import — only loaded when /api/export/docx is called)
 try:
@@ -179,7 +179,11 @@ async def _shutdown() -> None:
 
 # ── Static / frontend ─────────────────────────────────────────────────────────
 
-_FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+# Bundled frontend (inside package for pip install) takes priority,
+# then fall back to dev location (frontend/dist at project root)
+_FRONTEND_DIST = Path(__file__).parent / "frontend_dist"
+if not _FRONTEND_DIST.exists():
+    _FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
 if _FRONTEND_DIST.exists():
     # Mount static assets (JS, CSS, images) at /assets
@@ -751,7 +755,7 @@ async def ws_task(websocket: WebSocket) -> None:
 
 def start_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     """Start the Hydra HTTP server."""
-    uvicorn.run("hydra.server:app", host=host, port=port, reload=False)
+    uvicorn.run("hydra_agents.server:app", host=host, port=port, reload=False)
 
 
 

@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from hydra.config import HydraConfig
-from hydra.models import AgentOutput, AgentSpec, AgentStatus, Priority, SubTask, TaskPlan
-from hydra.post_brain import PostBrain
-from hydra.state_manager import StateManager
+from hydra_agents.config import HydraConfig
+from hydra_agents.models import AgentOutput, AgentSpec, AgentStatus, Priority, SubTask, TaskPlan
+from hydra_agents.post_brain import PostBrain
+from hydra_agents.state_manager import StateManager
 
 
 def make_config() -> HydraConfig:

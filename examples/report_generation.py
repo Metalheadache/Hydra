@@ -23,7 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from hydra import Hydra, HydraConfig
+from hydra_agents import Hydra, HydraConfig
 
 
 async def main() -> None:

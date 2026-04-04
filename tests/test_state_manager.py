@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from hydra.models import AgentOutput, AgentStatus
-from hydra.state_manager import StateManager, _TRUNCATE_CHAR_LIMIT
+from hydra_agents.models import AgentOutput, AgentStatus
+from hydra_agents.state_manager import StateManager, _TRUNCATE_CHAR_LIMIT
 
 
 @pytest.mark.asyncio

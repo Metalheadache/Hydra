@@ -21,10 +21,10 @@ from httpx import ASGITransport, AsyncClient
 
 # ── App import and test-DB setup ──────────────────────────────────────────────
 
-import hydra.server as server_module
-from hydra.events import EventType, HydraEvent
-from hydra.history import HistoryDB
-from hydra.models import FileAttachment
+import hydra_agents.server as server_module
+from hydra_agents.events import EventType, HydraEvent
+from hydra_agents.history import HistoryDB
+from hydra_agents.models import FileAttachment
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +33,7 @@ def reset_server_state(tmp_path):
     Point server to a fresh temp output dir + fresh DB for each test.
     Resets global _config, _history_db.
     """
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     original_config = server_module._config
     original_db = server_module._history_db
@@ -55,7 +55,7 @@ def reset_server_state(tmp_path):
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
-    from hydra.server import app
+    from hydra_agents.server import app
 
     # Trigger startup event
     from httpx import ASGITransport, AsyncClient
@@ -74,7 +74,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 async def test_get_config_redacts_api_key(client: AsyncClient):
     """Config endpoint should redact the api_key field."""
     # Set a key in the in-memory config
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     server_module._config = HydraConfig(api_key="sk-real-key-123")
 
@@ -88,7 +88,7 @@ async def test_get_config_redacts_api_key(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_config_empty_api_key(client: AsyncClient):
     """If api_key is empty, redacted value should be empty string."""
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     server_module._config = HydraConfig(api_key="")
     resp = await client.get("/api/config")
@@ -127,7 +127,7 @@ async def test_post_config_no_valid_fields_returns_400(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_post_config_redact_placeholder_preserved(client: AsyncClient):
     """Sending '***' as api_key should not overwrite the real key."""
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     server_module._config = HydraConfig(api_key="real-key")
     resp = await client.post("/api/config", json={"api_key": "***", "max_concurrent_agents": 2})
@@ -221,7 +221,7 @@ async def test_post_task_success(client: AsyncClient):
         "agents_needing_retry": [],
     }
 
-    with patch("hydra.server.Hydra") as MockHydra:
+    with patch("hydra_agents.server.Hydra") as MockHydra:
         instance = MockHydra.return_value
         instance.run = AsyncMock(return_value=fake_result)
 
@@ -240,7 +240,7 @@ async def test_post_task_missing_task_returns_400(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_post_task_failure_returns_500(client: AsyncClient):
-    with patch("hydra.server.Hydra") as MockHydra:
+    with patch("hydra_agents.server.Hydra") as MockHydra:
         instance = MockHydra.return_value
         instance.run = AsyncMock(side_effect=RuntimeError("LLM error"))
 
@@ -343,8 +343,8 @@ async def test_list_history_pagination(client: AsyncClient):
 def test_websocket_start_task_streams_events(tmp_path):
     """WebSocket should stream events via Starlette TestClient."""
     from starlette.testclient import TestClient
-    from hydra.server import app
-    from hydra.config import HydraConfig
+    from hydra_agents.server import app
+    from hydra_agents.config import HydraConfig
 
     events_to_yield = [
         HydraEvent(type=EventType.PIPELINE_START, data={"task_preview": "Test"}),
@@ -358,10 +358,10 @@ def test_websocket_start_task_streams_events(tmp_path):
 
     # Set fresh config with temp output dir
     server_module._config = HydraConfig(output_directory=str(tmp_path))
-    import hydra.server as sm
+    import hydra_agents.server as sm
     sm._history_db = HistoryDB(str(tmp_path / "history.db"))
 
-    with patch("hydra.server.Hydra") as MockHydra:
+    with patch("hydra_agents.server.Hydra") as MockHydra:
         instance = MockHydra.return_value
         instance.stream = fake_stream
 
@@ -385,7 +385,7 @@ def test_websocket_start_task_streams_events(tmp_path):
 async def test_websocket_wrong_message_type_closes(client: AsyncClient):
     """WebSocket should close if first message is not 'start_task'."""
     from starlette.testclient import TestClient
-    from hydra.server import app
+    from hydra_agents.server import app
 
     # Use Starlette's sync test client for WebSocket testing (simpler)
     with TestClient(app) as tc:
@@ -485,8 +485,8 @@ async def test_history_db_lazy_init(tmp_path):
 def test_ws_cancel_stops_pipeline(tmp_path):
     """Sending a 'cancel' message should cancel the pipeline task."""
     from starlette.testclient import TestClient
-    from hydra.server import app
-    from hydra.config import HydraConfig
+    from hydra_agents.server import app
+    from hydra_agents.config import HydraConfig
 
     cancel_event = asyncio.Event()
 
@@ -501,10 +501,10 @@ def test_ws_cancel_stops_pipeline(tmp_path):
         yield HydraEvent(type=EventType.PIPELINE_COMPLETE, data={})
 
     server_module._config = HydraConfig(output_directory=str(tmp_path))
-    import hydra.server as sm
+    import hydra_agents.server as sm
     sm._history_db = HistoryDB(str(tmp_path / "history.db"))
 
-    with patch("hydra.server.Hydra") as MockHydra:
+    with patch("hydra_agents.server.Hydra") as MockHydra:
         instance = MockHydra.return_value
         instance.stream = fake_stream_slow
 
@@ -526,7 +526,7 @@ def test_ws_cancel_stops_pipeline(tmp_path):
 @pytest.mark.asyncio
 async def test_upload_oversized_file_rejected(client: AsyncClient):
     """Uploading a file exceeding the configured size limit should return 413."""
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     # Set a very small limit (1 byte)
     server_module._config = HydraConfig(
@@ -545,8 +545,8 @@ async def test_upload_oversized_file_rejected(client: AsyncClient):
 def test_ws_malformed_json_ignored(tmp_path):
     """Malformed JSON from client during pipeline should be silently ignored (not crash)."""
     from starlette.testclient import TestClient
-    from hydra.server import app
-    from hydra.config import HydraConfig
+    from hydra_agents.server import app
+    from hydra_agents.config import HydraConfig
 
     events_to_yield = [
         HydraEvent(type=EventType.PIPELINE_START, data={"task_preview": "Test"}),
@@ -558,10 +558,10 @@ def test_ws_malformed_json_ignored(tmp_path):
             yield event
 
     server_module._config = HydraConfig(output_directory=str(tmp_path))
-    import hydra.server as sm
+    import hydra_agents.server as sm
     sm._history_db = HistoryDB(str(tmp_path / "history.db"))
 
-    with patch("hydra.server.Hydra") as MockHydra:
+    with patch("hydra_agents.server.Hydra") as MockHydra:
         instance = MockHydra.return_value
         instance.stream = fake_stream
 
@@ -585,7 +585,7 @@ def test_ws_malformed_json_ignored(tmp_path):
 @pytest.mark.asyncio
 async def test_task_text_too_long_rejected(client: AsyncClient):
     """POST /api/task with task text exceeding MAX_TASK_LENGTH should return 400."""
-    from hydra.server import MAX_TASK_LENGTH
+    from hydra_agents.server import MAX_TASK_LENGTH
 
     long_task = "x" * (MAX_TASK_LENGTH + 1)
     resp = await client.post("/api/task", json={"task": long_task})
@@ -596,7 +596,7 @@ async def test_task_text_too_long_rejected(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_auth_token_required(client: AsyncClient):
     """When server_token is configured, requests without it should get 401."""
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     server_module._config = HydraConfig(
         output_directory=str(server_module._config.output_directory),
@@ -619,7 +619,7 @@ async def test_auth_token_required(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_auth_token_skipped(client: AsyncClient):
     """When server_token is empty (default), all requests should be allowed without auth."""
-    from hydra.config import HydraConfig
+    from hydra_agents.config import HydraConfig
 
     # Ensure no token is set (default)
     server_module._config = HydraConfig(
@@ -672,9 +672,9 @@ async def test_download_file_path_traversal_blocked(client: AsyncClient, tmp_pat
 @pytest.mark.asyncio
 async def test_pipeline_complete_contains_full_result():
     """PIPELINE_COMPLETE event should contain the full result dict, not just counts."""
-    from hydra import Hydra
-    from hydra.config import HydraConfig
-    from hydra.events import EventBus, EventType, HydraEvent
+    from hydra_agents import Hydra
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.events import EventBus, EventType, HydraEvent
 
     full_result = {
         "output": "Test output",
@@ -710,12 +710,12 @@ async def test_agent_complete_event_has_full_fields():
     """agent_complete event data must include output, status, tokens_used, execution_time_ms."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from hydra.agent import Agent
-    from hydra.config import HydraConfig
-    from hydra.events import EventBus, EventType
-    from hydra.models import AgentOutput, AgentSpec, AgentStatus, SubTask
-    from hydra.state_manager import StateManager
-    from hydra.tool_registry import ToolRegistry
+    from hydra_agents.agent import Agent
+    from hydra_agents.config import HydraConfig
+    from hydra_agents.events import EventBus, EventType
+    from hydra_agents.models import AgentOutput, AgentSpec, AgentStatus, SubTask
+    from hydra_agents.state_manager import StateManager
+    from hydra_agents.tool_registry import ToolRegistry
 
     spec = AgentSpec(
         agent_id="agent-1",
@@ -725,7 +725,7 @@ async def test_agent_complete_event_has_full_fields():
         backstory="Expert researcher",
         tools_needed=[],
     )
-    from hydra.models import Priority
+    from hydra_agents.models import Priority
     sub_task = SubTask(
         id="task-1",
         description="Research topic X",

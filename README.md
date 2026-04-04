@@ -13,7 +13,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🧠 **Brain (Planner)** — Automatic task decomposition + agent generation via structured LLM call
 - 🤖 **Dynamic Agents** — Each agent gets a tailored role, goal, backstory, and tool set — generated at runtime, not pre-built
 - ⚡ **Hybrid DAG Execution** — Independent tasks run in parallel; dependent tasks wait automatically
-- 📡 **Real-time Streaming** — Token-by-token LLM output, tool call visibility, and full pipeline progress via `hydra.stream()`
+- 📡 **Real-time Streaming** — Token-by-token LLM output, tool call visibility, and full pipeline progress via `.stream()`
 - 🖥️ **Web UI** — Glassmorphism chat interface with live orchestration view, agent cards, quality scores, and result export
 - 🔄 **Retry + Quality Gate** — Failed agents retry with exponential backoff; LLM quality scoring (1-10) with automatic re-dispatch
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
@@ -38,8 +38,9 @@ pip install -e ".[dev]"
 # Build frontend
 cd frontend && npm install && npx vite build && cd ..
 
-# Start server
-python -m hydra
+# Start server (auto-opens browser)
+hydra-agents serve
+# Or: python -m hydra_agents serve
 # → Open http://localhost:8000
 ```
 
@@ -49,7 +50,7 @@ Configure your LLM provider in the Settings panel (gear icon), then type a task 
 
 ```python
 import asyncio
-from hydra import Hydra
+from hydra_agents import Hydra
 
 async def main():
     hydra = Hydra()
@@ -154,7 +155,7 @@ The built-in web interface provides a real-time view of the multi-agent pipeline
 Hydra includes a FastAPI backend for web deployment:
 
 ```bash
-python -m hydra --host 0.0.0.0 --port 8000
+hydra-agents serve --host 0.0.0.0 --port 8000
 ```
 
 ### REST Endpoints
@@ -463,8 +464,8 @@ pytest tests/ -v
 ## Custom Tools
 
 ```python
-from hydra.tools.base import BaseTool
-from hydra.models import ToolResult
+from hydra_agents.tools.base import BaseTool
+from hydra_agents.models import ToolResult
 
 class MyTool(BaseTool):
     name = "my_tool"

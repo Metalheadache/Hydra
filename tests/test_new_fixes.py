@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from hydra.tools.research_tools import HttpRequestTool, WebFetchTool
-from hydra.tools.data_tools import DataTransformTool
+from hydra_agents.tools.research_tools import HttpRequestTool, WebFetchTool
+from hydra_agents.tools.data_tools import DataTransformTool
 
 
 # ── SSRF: HttpRequestTool redirect prevention ─────────────────────────────────
@@ -38,7 +38,7 @@ async def test_http_request_follow_redirects_false():
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.request = mock_request
 
-    with patch("hydra.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
+    with patch("hydra_agents.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
         result = await tool.execute(method="GET", url="https://example.com")
 
     assert captured_kwargs.get("follow_redirects") is False, (
@@ -71,7 +71,7 @@ async def test_http_request_ssrf_redirect_to_localhost_blocked():
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.request = mock_request
 
-    with patch("hydra.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
+    with patch("hydra_agents.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
         result = await tool.execute(method="GET", url="https://example.com")
 
     # The request should succeed (redirect returned as-is, not followed)
@@ -101,7 +101,7 @@ async def test_http_request_timeout_upper_bound():
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.request = mock_request
 
-    with patch("hydra.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
+    with patch("hydra_agents.tools.research_tools.httpx.AsyncClient", return_value=mock_client):
         # Request timeout of 9999 should be capped at 60
         result = await tool.execute(method="GET", url="https://example.com", timeout=9999)
 

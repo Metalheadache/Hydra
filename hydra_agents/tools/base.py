@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from hydra.models import ToolResult
+from hydra_agents.models import ToolResult
 
 
 class BaseTool(ABC):

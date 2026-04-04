@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any
 import jsonschema
 import structlog
 
-from hydra.models import ToolResult
-from hydra.tools.base import BaseTool
-from hydra.tools.file_tools import _ensure_output_dir, _safe_filepath, _DEFAULT_OUTPUT_DIR
+from hydra_agents.models import ToolResult
+from hydra_agents.tools.base import BaseTool
+from hydra_agents.tools.file_tools import _ensure_output_dir, _safe_filepath, _DEFAULT_OUTPUT_DIR
 
 if TYPE_CHECKING:
-    from hydra.state_manager import StateManager
+    from hydra_agents.state_manager import StateManager
 
 logger = structlog.get_logger(__name__)
 

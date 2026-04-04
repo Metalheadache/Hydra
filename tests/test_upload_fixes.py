@@ -20,10 +20,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from hydra.config import HydraConfig
-from hydra.events import EventType, HydraEvent
-from hydra.file_processor import FileProcessor
-from hydra.models import FileAttachment
+from hydra_agents.config import HydraConfig
+from hydra_agents.events import EventType, HydraEvent
+from hydra_agents.file_processor import FileProcessor
+from hydra_agents.models import FileAttachment
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ async def test_file_processed_events_in_run(tmp_path):
     Previously, event_bus was created AFTER _process_files(), so FILE_PROCESSED
     events were emitted to None and lost.
     """
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     collected: list[HydraEvent] = []
 
@@ -133,10 +133,10 @@ async def test_file_processed_events_in_run(tmp_path):
     hydra.on_event(collector)
 
     with (
-        patch("hydra.Brain.plan", new_callable=AsyncMock, return_value=mock_plan),
-        patch("hydra.AgentFactory.create_agents", return_value=[]),
-        patch("hydra.ExecutionEngine.execute", new_callable=AsyncMock),
-        patch("hydra.PostBrain.synthesize", new_callable=AsyncMock, return_value=mock_result),
+        patch("hydra_agents.Brain.plan", new_callable=AsyncMock, return_value=mock_plan),
+        patch("hydra_agents.AgentFactory.create_agents", return_value=[]),
+        patch("hydra_agents.ExecutionEngine.execute", new_callable=AsyncMock),
+        patch("hydra_agents.PostBrain.synthesize", new_callable=AsyncMock, return_value=mock_result),
     ):
         await hydra.run("Summarize the file", files=[str(test_file)])
 
@@ -175,7 +175,7 @@ async def test_max_files_limit(tmp_path):
     """
     Passing more than max_upload_files (default 20) should raise ValueError.
     """
-    from hydra import Hydra
+    from hydra_agents import Hydra
 
     config = HydraConfig(max_upload_files=20, output_directory=str(tmp_path / "out"))
     hydra = Hydra(config=config)
@@ -194,7 +194,7 @@ async def test_max_files_limit(tmp_path):
     mock_plan.original_task = ""
 
     with (
-        patch("hydra.Brain.plan", new_callable=AsyncMock, return_value=mock_plan),
+        patch("hydra_agents.Brain.plan", new_callable=AsyncMock, return_value=mock_plan),
     ):
         with pytest.raises(ValueError, match="Too many files"):
             await hydra.run("process files", files=files)
