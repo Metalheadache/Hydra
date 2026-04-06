@@ -73,6 +73,7 @@ class ToolRegistry:
         from hydra_agents.tools.pdf_tools import PdfMergeTool, PdfSplitTool
 
         output_dir = config.output_directory if config is not None else "./hydra_output"
+        sandbox_network = config.sandbox_network if config is not None else False
 
         self.register_many([
             # File tools
@@ -94,8 +95,8 @@ class ToolRegistry:
             ChartGeneratorTool(output_dir=output_dir),
             DataTransformTool(),
             # Code tools
-            RunPythonTool(),
-            RunShellTool(),
+            RunPythonTool(sandbox_network=sandbox_network),
+            RunShellTool(sandbox_network=sandbox_network),
             # Memory tools
             MemoryStoreTool(),
             MemoryRetrieveTool(),

@@ -5,6 +5,7 @@ Code execution tools with security controls.
 from __future__ import annotations
 
 import asyncio
+import platform
 import re
 import shlex
 import os
@@ -23,6 +24,57 @@ logger = structlog.get_logger(__name__)
 
 _PYTHON_TIMEOUT = 30
 _SHELL_TIMEOUT = 15
+
+# Cached once at import time so every tool call doesn't re-scan PATH.
+_UNSHARE_PATH: str | None = shutil.which("unshare")
+
+# Warn at most once per process about non-Linux platforms (not on every call).
+_non_linux_warned: bool = False
+
+
+def _network_sandbox_prefix(sandbox_network: bool) -> list[str] | None:
+    """Build the unshare prefix for network-namespace sandboxing.
+
+    Args:
+        sandbox_network: True when the caller wants network isolation.
+
+    Returns:
+        - ``[]``   — sandboxing disabled; proceed normally.
+        - non-empty list — prepend this to the subprocess argv.
+        - ``None`` — sandboxing was requested but is unavailable;
+                     the caller **must** fail-closed (return an error).
+
+    Implementation notes:
+        ``unshare --user --net --`` creates a new *user* namespace (so no
+        CAP_SYS_ADMIN is needed) and a network namespace inside it.  The child
+        process has no network interfaces beyond loopback and cannot make
+        outbound calls.  Requires Linux ≥ 3.8 with unprivileged user namespaces
+        enabled (``kernel.unprivileged_userns_clone=1`` on Debian/Ubuntu; on
+        most other distros this is the default).
+    """
+    global _non_linux_warned
+
+    if not sandbox_network:
+        return []
+
+    if platform.system() != "Linux":
+        if not _non_linux_warned:
+            logger.warning(
+                "network_sandbox_unavailable",
+                reason="HYDRA_SANDBOX_NETWORK requires Linux; not supported on this platform",
+            )
+            _non_linux_warned = True
+        return None  # fail-closed
+
+    if _UNSHARE_PATH is None:
+        logger.error(
+            "network_sandbox_unavailable",
+            reason="`unshare` not found in PATH; install util-linux or use the Docker image",
+        )
+        return None  # fail-closed
+
+    return [_UNSHARE_PATH, "--user", "--net", "--"]
+
 
 # Only these shell commands are allowed
 _ALLOWED_SHELL_COMMANDS = frozenset({
@@ -52,8 +104,9 @@ _DANGEROUS_ENV_VARS = frozenset({
 class RunPythonTool(BaseTool):
     """Execute Python code in an isolated temp directory and return stdout.
 
-    WARNING: Network access is NOT blocked. Code can make network calls.
-    For production use, run in Docker with --network none.
+    Network access is blocked when sandbox_network=True (Linux only, via
+    ``unshare --user --net``).  For full container-level isolation, run Hydra
+    in Docker and set HYDRA_SANDBOX_NETWORK=true.
     """
 
     name = "run_python"
@@ -61,8 +114,8 @@ class RunPythonTool(BaseTool):
         "Execute Python code in a sandboxed subprocess. "
         "Returns stdout, stderr, and a list of any files created in the temp directory. "
         "SECURITY: code runs in a fresh temp directory with no persistent state. "
-        "WARNING: Network access is NOT blocked. Code can make network calls. "
-        "For production use, run in Docker with --network none."
+        "Network access is blocked when HYDRA_SANDBOX_NETWORK=true (Linux only); "
+        "otherwise network calls are permitted — run in Docker for full isolation."
     )
     parameters = {
         "type": "object",
@@ -82,11 +135,10 @@ class RunPythonTool(BaseTool):
     timeout_seconds = _PYTHON_TIMEOUT + 5
     requires_confirmation = True  # Arbitrary code execution requires user approval
 
+    def __init__(self, sandbox_network: bool = False) -> None:
+        self._sandbox_network = sandbox_network
+
     async def execute(self, code: str, timeout: int = _PYTHON_TIMEOUT) -> ToolResult:
-        # NOTE: Network access is not restricted at the OS level. The code subprocess
-        # can freely make network calls. For true isolation, run in a container
-        # with --network none or use seccomp/namespaces.
-        # (os imported at module level)
         tmp_dir = tempfile.mkdtemp(prefix="hydra_python_")
         try:
             script_path = Path(tmp_dir) / "script.py"
@@ -103,9 +155,21 @@ class RunPythonTool(BaseTool):
             for var in _DANGEROUS_ENV_VARS:
                 safe_env.pop(var, None)
 
+            # Optionally wrap in a network namespace to block outbound calls
+            sandbox = _network_sandbox_prefix(self._sandbox_network)
+            if sandbox is None:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Network sandboxing is enabled (HYDRA_SANDBOX_NETWORK=true) but "
+                        "cannot be enforced on this host — `unshare` is missing or this "
+                        "platform is not Linux. Refusing to run without the requested sandbox."
+                    ),
+                )
+            cmd = [*sandbox, sys.executable, str(script_path)]
+
             proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                str(script_path),
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=tmp_dir,
@@ -176,6 +240,9 @@ class RunPythonTool(BaseTool):
 
 class RunShellTool(BaseTool):
     """Execute whitelisted shell commands and return output."""
+
+    def __init__(self, sandbox_network: bool = False) -> None:
+        self._sandbox_network = sandbox_network
 
     name = "run_shell"
     description = (
@@ -253,12 +320,22 @@ class RunShellTool(BaseTool):
                 )
 
         try:
-            # M3: Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
-            # (os imported at module level)
+            # Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
             safe_cwd = os.environ.get("HYDRA_OUTPUT_DIRECTORY", "/tmp")
+            # Optionally wrap in a network namespace to block outbound calls
+            sandbox = _network_sandbox_prefix(self._sandbox_network)
+            if sandbox is None:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Network sandboxing is enabled (HYDRA_SANDBOX_NETWORK=true) but "
+                        "cannot be enforced on this host — `unshare` is missing or this "
+                        "platform is not Linux. Refusing to run without the requested sandbox."
+                    ),
+                )
             # Use create_subprocess_exec (not shell=True) to avoid shell interpretation
             proc = await asyncio.create_subprocess_exec(
-                *tokens,
+                *sandbox, *tokens,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=safe_cwd,

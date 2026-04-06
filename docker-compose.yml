@@ -1,0 +1,39 @@
+services:
+  hydra:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Generated files (charts, docs, exports) land here on the host
+      - ./hydra_output:/data/output
+    # Drop a .env file next to docker-compose.yml to set HYDRA_API_KEY etc.
+    # The file is optional — the container starts fine without it.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Uncomment and set your provider API key here, or use the .env file above:
+      # HYDRA_API_KEY: sk-ant-...
+      # HYDRA_DEFAULT_MODEL: anthropic/claude-sonnet-4-6
+
+      # ── Network sandboxing for run_python / run_shell ──────────────────────
+      # When true, subprocesses are isolated in a Linux network namespace
+      # (unshare --user --net) so they cannot make outbound network calls.
+      # No extra capabilities are needed on most kernels; see note below.
+      # HYDRA_SANDBOX_NETWORK: "true"
+
+    # Prevent the process from gaining new privileges after startup.
+    security_opt:
+      - no-new-privileges:true
+
+    restart: unless-stopped
+
+    # ── Network sandboxing note ──────────────────────────────────────────────
+    # unshare --user --net works without CAP_SYS_ADMIN on kernels that allow
+    # unprivileged user namespaces (kernel.unprivileged_userns_clone=1).
+    # This is the default on most distributions (Fedora, Arch, recent Ubuntu).
+    # On Debian-based systems where it is disabled, either enable the sysctl:
+    #   sysctl -w kernel.unprivileged_userns_clone=1
+    # or add the capability below:
+    # cap_add:
+    #   - SYS_ADMIN

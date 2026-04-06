@@ -38,7 +38,34 @@ hydra-agents serve
 
 Configure your LLM provider in the Settings panel (gear icon), then type a task and watch the agents work.
 
-### Option 2: From source (for development)
+### Option 2: Docker
+
+```bash
+git clone https://github.com/Metalheadache/Hydra.git
+cd Hydra
+
+# Create a .env file with your provider key (or set env vars in docker-compose.yml)
+echo "HYDRA_API_KEY=sk-ant-..." > .env
+
+docker compose up --build
+# → Open http://localhost:8000
+```
+
+Generated files (charts, exports, etc.) appear in `./hydra_output/` on your host.
+
+**Network sandboxing** — to block outbound network calls inside `run_python` / `run_shell` subprocesses, do both of the following:
+
+1. Add to your `.env` (or uncomment in `docker-compose.yml`):
+   ```env
+   HYDRA_SANDBOX_NETWORK=true
+   ```
+2. No extra Docker capabilities are needed on most Linux kernels. If you see a permission error, enable unprivileged user namespaces on the host:
+   ```bash
+   sysctl -w kernel.unprivileged_userns_clone=1
+   ```
+   or uncomment `cap_add: [SYS_ADMIN]` in `docker-compose.yml` as a fallback.
+
+### Option 3: From source (for development)
 
 ```bash
 git clone https://github.com/Metalheadache/Hydra.git
@@ -52,7 +79,7 @@ cd frontend && npm install && npx vite build && cd ..
 hydra-agents serve
 ```
 
-### Option 3: Python API
+### Option 4: Python API
 
 ```python
 import asyncio
@@ -70,7 +97,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Option 4: Streaming API
+### Option 5: Streaming API
 
 ```python
 async def main():
@@ -91,7 +118,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Option 5: With File Attachments
+### Option 6: With File Attachments
 
 ```python
 result = await hydra.run(
@@ -100,7 +127,7 @@ result = await hydra.run(
 )
 ```
 
-### Option 6: Callbacks
+### Option 7: Callbacks
 
 ```python
 hydra = Hydra()

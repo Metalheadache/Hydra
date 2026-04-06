@@ -70,6 +70,18 @@ class HydraConfig(BaseSettings):
         description="Optional API token for server auth. When set, all /api/* routes require X-API-Key header. Env: HYDRA_SERVER_TOKEN.",
     )
 
+    # ── Security ──────────────────────────────────────────────────────────────
+    sandbox_network: bool = Field(
+        default=False,
+        description=(
+            "Block outbound network access inside run_python/run_shell subprocesses "
+            "by launching them in a new Linux network namespace (unshare --net). "
+            "Only effective on Linux with CAP_SYS_ADMIN (or equivalent). "
+            "When running via Docker, also add cap_add: [SYS_ADMIN] to the service. "
+            "Env: HYDRA_SANDBOX_NETWORK."
+        ),
+    )
+
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins: str = Field(
         default="*",
