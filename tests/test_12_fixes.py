@@ -274,7 +274,7 @@ async def test_upload_chunked_rejects_oversized_file(tmp_path):
 
     server_module._config = HydraConfig(
         output_directory=str(tmp_path),
-        max_upload_file_size_mb=0,  # 0 MB → basically nothing allowed
+        max_upload_file_size_mb=1,  # 1 MB limit (minimum valid value)
     )
     server_module._history_db = HistoryDB(str(tmp_path / "history.db"))
     await server_module._history_db.init()
@@ -282,7 +282,7 @@ async def test_upload_chunked_rejects_oversized_file(tmp_path):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        oversized = b"X" * 100  # 100 bytes > 0 MB limit
+        oversized = b"X" * (1024 * 1024 + 1)  # 1 MB + 1 byte > 1 MB limit
         resp = await ac.post(
             "/api/upload",
             files=[("files", ("big.txt", io.BytesIO(oversized), "text/plain"))],
