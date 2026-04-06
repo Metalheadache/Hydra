@@ -92,7 +92,7 @@ tag = true
 tag_name = "v{new_version}"
 tag_message = "Release v{new_version}"
 message = "bump version: {current_version} → {new_version}"
-commit_args = "--no-verify"
+commit_args = "--no-verify"   # skip pre-commit hooks; version bump commits are mechanical
 
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"

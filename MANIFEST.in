@@ -1,2 +1,2 @@
 include hydra_agents/py.typed
-recursive-include frontend/dist *
+recursive-include hydra_agents/frontend_dist *
