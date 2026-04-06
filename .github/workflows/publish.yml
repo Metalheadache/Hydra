@@ -76,6 +76,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install packaging (for PEP 440 validation)
+        run: pip install packaging --quiet
+
       - name: Validate PEP 440 version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"   # strip leading v  →  1.0.2
