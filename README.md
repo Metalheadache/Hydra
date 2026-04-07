@@ -248,6 +248,7 @@ All settings use the `HYDRA_` environment variable prefix:
 | `HYDRA_MIN_QUALITY_SCORE` | `5.0` | Minimum score before retry |
 | `HYDRA_SERVER_TOKEN` | `""` | Optional API auth token |
 | `HYDRA_CORS_ORIGINS` | `*` | CORS allowed origins |
+| `HYDRA_SANDBOX_NETWORK` | `false` | Block outbound network in code tools (Linux `unshare`) |
 | `HYDRA_SEARCH_BACKEND` | `brave` | Web search provider |
 | `HYDRA_SEARCH_API_KEY` | `""` | Search API key |
 
@@ -463,7 +464,7 @@ Hydra runs LLM-generated code and tool calls. Here's what's protected and what's
 - **Tool isolation**: Stateful tools get per-agent instances. No shared mutable state between concurrent runs.
 
 **What's NOT sandboxed (be honest with yourself):**
-- **Python execution**: Has full network access and filesystem read. For real isolation, wrap Hydra in Docker with `--network none`. We don't pretend otherwise.
+- **Python execution**: Has filesystem read by default. Network access can be blocked with `HYDRA_SANDBOX_NETWORK=true` (Linux only, uses `unshare --net`). For full isolation, run in Docker with `--network none`.
 - **LLM prompt injection**: Defense-in-depth sanitization helps but isn't a guarantee against sophisticated attacks.
 
 **For production deployment**, run Hydra inside a container with restricted network and filesystem access.
@@ -538,21 +539,23 @@ hydra.tool_registry.register(MyTool())
 - [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
 - [x] Responsive polish (mobile/tablet/desktop)
 
-**Phase 5 (Build & Deploy) — IN PROGRESS:**
+**Phase 5 ✅ COMPLETE:**
 - [x] PyPI package (`pip install hydra-agents`)
-- [x] CLI entry point (`hydra-agents serve` / `hydra-agents run`)
+- [x] CLI entry point (`hydra-agents serve` / `hydra-agents run` / `--version`)
 - [x] Auto-open browser on launch
 - [x] Frontend bundled in wheel
-- [ ] Docker image (multi-stage build)
-- [ ] CI/CD (GitHub Actions → PyPI on tag)
-- [ ] Standalone executable (PyInstaller, Windows)
+- [x] Docker: multi-stage build (node → python), docker-compose, non-root user
+- [x] Network sandbox: `HYDRA_SANDBOX_NETWORK=true` blocks outbound in code tools (Linux `unshare`)
+- [x] CI/CD: GitHub Actions — PyPI publish on tag (OIDC trusted), Docker push to GHCR
+- [x] Version management: `bump-my-version` (bump patch/minor/major → commit → tag)
 
 **Phase 6 (Future):**
+- [ ] Standalone executable (PyInstaller, Windows — only if demand exists)
 - [ ] MCP (Model Context Protocol) tool integration
 - [ ] Vector store / RAG tool
 - [ ] Data classification / sensitivity routing
-- [ ] Docker `--network none` sandboxing for code tools
 - [ ] Webhook triggers
+- [ ] User accounts + team features
 
 ---
 
