@@ -35,7 +35,8 @@ def tmp_dir(tmp_path):
 
 @pytest.fixture()
 def processor(tmp_dir):
-    return FileProcessor(output_dir=str(tmp_dir / "output"))
+    # output_dir must be under tmp_dir so test files pass the allowed-roots check
+    return FileProcessor(output_dir=str(tmp_dir))
 
 
 # ── Fix 2: Path traversal blocked ─────────────────────────────────────────────

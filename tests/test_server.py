@@ -528,13 +528,13 @@ async def test_upload_oversized_file_rejected(client: AsyncClient):
     """Uploading a file exceeding the configured size limit should return 413."""
     from hydra_agents.config import HydraConfig
 
-    # Set a very small limit (1 byte)
+    # Set a 1 MB limit, then send 1 byte over
     server_module._config = HydraConfig(
         output_directory=str(server_module._config.output_directory),
-        max_upload_file_size_mb=0,  # 0 MB → effectively 0 bytes max
+        max_upload_file_size_mb=1,  # 1 MB limit (minimum valid value)
     )
 
-    oversized_content = b"X" * 10  # 10 bytes, more than 0 MB
+    oversized_content = b"X" * (1024 * 1024 + 1)  # 1 MB + 1 byte
     resp = await client.post(
         "/api/upload",
         files=[("files", ("big.txt", io.BytesIO(oversized_content), "text/plain"))],
