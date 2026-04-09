@@ -135,8 +135,9 @@ class RunPythonTool(BaseTool):
     timeout_seconds = _PYTHON_TIMEOUT + 5
     requires_confirmation = True  # Arbitrary code execution requires user approval
 
-    def __init__(self, sandbox_network: bool = False) -> None:
+    def __init__(self, sandbox_network: bool = False, output_dir: str = "./hydra_output") -> None:
         self._sandbox_network = sandbox_network
+        self._output_dir = output_dir
 
     async def execute(self, code: str, timeout: int = _PYTHON_TIMEOUT) -> ToolResult:
         tmp_dir = tempfile.mkdtemp(prefix="hydra_python_")
@@ -203,7 +204,7 @@ class RunPythonTool(BaseTool):
             # (os imported at module level)
             import uuid as _uuid
             run_prefix = _uuid.uuid4().hex[:8]
-            output_dir = Path(os.environ.get("HYDRA_OUTPUT_DIRECTORY", "./hydra_output"))
+            output_dir = Path(self._output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             created_files_paths: list[str] = []
             for fname in created_files:
@@ -241,8 +242,9 @@ class RunPythonTool(BaseTool):
 class RunShellTool(BaseTool):
     """Execute whitelisted shell commands and return output."""
 
-    def __init__(self, sandbox_network: bool = False) -> None:
+    def __init__(self, sandbox_network: bool = False, output_dir: str = "./hydra_output") -> None:
         self._sandbox_network = sandbox_network
+        self._output_dir = output_dir
 
     name = "run_shell"
     description = (
@@ -320,8 +322,10 @@ class RunShellTool(BaseTool):
                 )
 
         try:
-            # Use a safe CWD (output dir or /tmp) rather than inheriting the process CWD
-            safe_cwd = os.environ.get("HYDRA_OUTPUT_DIRECTORY", "/tmp")
+            # Use a safe CWD (output dir) rather than inheriting the process CWD
+            safe_cwd = self._output_dir
+            # Build subprocess environment: strip dangerous credentials
+            safe_env = {k: v for k, v in os.environ.items() if k not in _DANGEROUS_ENV_VARS}
             # Optionally wrap in a network namespace to block outbound calls
             sandbox = _network_sandbox_prefix(self._sandbox_network)
             if sandbox is None:
@@ -339,6 +343,7 @@ class RunShellTool(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=safe_cwd,
+                env=safe_env,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)

@@ -13,6 +13,7 @@ Or programmatically:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import re
@@ -32,7 +33,7 @@ from hydra_agents.config import HydraConfig
 from hydra_agents.events import EventBus, EventType, HydraEvent
 from hydra_agents.file_processor import FileProcessor
 from hydra_agents.history import HistoryDB
-from hydra_agents import Hydra
+from hydra_agents import Hydra, __version__
 
 # DOCX export (lazy import — only loaded when /api/export/docx is called)
 try:
@@ -65,7 +66,7 @@ _SUGGESTED_MODELS = [
 app = FastAPI(
     title="Hydra",
     description="Dynamic Multi-Agent Orchestration Framework API",
-    version="0.1.0",
+    version=__version__,
 )
 
 # CORS middleware — reads _config.cors_origins per request so changes take effect
@@ -135,7 +136,7 @@ def _extract_result_meta(result: dict) -> tuple[int | None, float | None, int, i
     All values are best-effort; fall back to 0 / None on missing data.
     """
     summary = result.get("execution_summary", {}) or {}
-    total_tokens = summary.get("total_tokens")
+    total_tokens = summary.get("total_tokens_used")
     total_cost = summary.get("total_cost")
     files_count = len(result.get("files_generated", []))
     per_agent = result.get("per_agent_quality", {}) or {}
@@ -155,7 +156,7 @@ async def verify_token(request: Request) -> None:
         return  # auth not configured — open access
     # Header-only auth — query params are logged by proxies and leak in server logs
     token = request.headers.get("X-API-Key")
-    if token != _config.server_token:
+    if not hmac.compare_digest(token or "", _config.server_token or ""):
         raise HTTPException(status_code=401, detail="Invalid or missing API token")
 
 
@@ -223,7 +224,8 @@ async def update_config(body: dict) -> dict:
     """
     global _config, _history_db, _DB_PATH
 
-    allowed = set(HydraConfig.model_fields.keys())
+    _CONFIG_READONLY_FIELDS = frozenset({"custom_brain_prompt", "api_base"})
+    allowed = set(HydraConfig.model_fields.keys()) - _CONFIG_READONLY_FIELDS
     # api_key is allowed to be set, but we never allow setting it to the redacted value
     updates = {k: v for k, v in body.items() if k in allowed}
 
@@ -470,7 +472,7 @@ async def export_docx(body: dict) -> Any:
                 doc.add_heading(stripped[2:], level=1)
             elif stripped.startswith("- ") or stripped.startswith("* "):
                 doc.add_paragraph(stripped[2:], style="List Bullet")
-            elif stripped.startswith("1. ") or stripped.startswith("2. ") or stripped.startswith("3. "):
+            elif re.match(r'^\d+\.\s', stripped):
                 doc.add_paragraph(stripped[stripped.index(". ") + 2:], style="List Number")
             elif stripped.startswith("> "):
                 para = doc.add_paragraph(stripped[2:])
@@ -652,7 +654,8 @@ async def ws_task(websocket: WebSocket) -> None:
         # Build per-task config
         cfg_data = _config.model_dump()
         if config_overrides:
-            allowed = set(HydraConfig.model_fields.keys())
+            _CONFIG_READONLY_FIELDS = frozenset({"custom_brain_prompt", "api_base"})
+            allowed = set(HydraConfig.model_fields.keys()) - _CONFIG_READONLY_FIELDS
             valid_overrides = {k: v for k, v in config_overrides.items() if k in allowed}
             cfg_data.update(valid_overrides)
         try:

@@ -317,7 +317,8 @@ class Agent:
                         iter_tokens_in + iter_tokens_out
                     )
                 if self.audit_logger:
-                    self.audit_logger.log_llm_call(
+                    await asyncio.to_thread(
+                        self.audit_logger.log_llm_call,
                         model=model,
                         tokens_in=iter_tokens_in,
                         tokens_out=iter_tokens_out,
@@ -379,7 +380,8 @@ class Agent:
                         ns_tokens_in + ns_tokens_out
                     )
                 if self.audit_logger:
-                    self.audit_logger.log_llm_call(
+                    await asyncio.to_thread(
+                        self.audit_logger.log_llm_call,
                         model=model,
                         tokens_in=ns_tokens_in,
                         tokens_out=ns_tokens_out,
@@ -458,7 +460,7 @@ class Agent:
                 if getattr(tool, "requires_confirmation", False) and self.event_bus:
                     from hydra_agents.events import EventType, HydraEvent
                     confirmation_id = str(uuid.uuid4())
-                    timeout = self.config.per_agent_timeout_seconds
+                    timeout = getattr(self.config, "confirmation_timeout_seconds", 120)
                     try:
                         approved = await asyncio.wait_for(
                             self.event_bus.request_confirmation(
@@ -483,7 +485,8 @@ class Agent:
                         )
                         self._log.info("tool_rejected", tool=tool_name)
                         if self.audit_logger:
-                            self.audit_logger.log_tool_execution(
+                            await asyncio.to_thread(
+                                self.audit_logger.log_tool_execution,
                                 tool_name=tool_name,
                                 args=kwargs,
                                 result_success=False,
@@ -515,7 +518,8 @@ class Agent:
                 tool_duration_ms = int(time.monotonic() * 1000) - tool_start_ms
 
                 if self.audit_logger:
-                    self.audit_logger.log_tool_execution(
+                    await asyncio.to_thread(
+                        self.audit_logger.log_tool_execution,
                         tool_name=tool_name,
                         args=kwargs,
                         result_success=result.success,

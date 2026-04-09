@@ -136,8 +136,9 @@ def is_ssrf_target_sync(url: str) -> bool:
     bare_host = host.strip("[]")
     try:
         addr = ipaddress.ip_address(bare_host)
-        return any(addr in net for net in _BLOCKED_NETWORKS)
-    except ValueError:
+        check_addr = getattr(addr, "ipv4_mapped", None) or addr
+        return any(check_addr in net for net in _BLOCKED_NETWORKS)
+    except (ValueError, TypeError):
         pass
 
     try:
@@ -145,9 +146,10 @@ def is_ssrf_target_sync(url: str) -> bool:
         for _family, _, _, _, sockaddr in resolved:
             try:
                 addr = ipaddress.ip_address(sockaddr[0])
-                if any(addr in net for net in _BLOCKED_NETWORKS):
+                check_addr = getattr(addr, "ipv4_mapped", None) or addr
+                if any(check_addr in net for net in _BLOCKED_NETWORKS):
                     return True
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
     except Exception:
         pass
@@ -179,8 +181,9 @@ async def is_ssrf_target(url: str) -> bool:
     bare_host = host.strip("[]")
     try:
         addr = ipaddress.ip_address(bare_host)
-        return any(addr in net for net in _BLOCKED_NETWORKS)
-    except ValueError:
+        check_addr = getattr(addr, "ipv4_mapped", None) or addr
+        return any(check_addr in net for net in _BLOCKED_NETWORKS)
+    except (ValueError, TypeError):
         pass
 
     try:
@@ -189,9 +192,10 @@ async def is_ssrf_target(url: str) -> bool:
         for _family, _, _, _, sockaddr in resolved:
             try:
                 addr = ipaddress.ip_address(sockaddr[0])
-                if any(addr in net for net in _BLOCKED_NETWORKS):
+                check_addr = getattr(addr, "ipv4_mapped", None) or addr
+                if any(check_addr in net for net in _BLOCKED_NETWORKS):
                     return True
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
     except Exception:
         pass

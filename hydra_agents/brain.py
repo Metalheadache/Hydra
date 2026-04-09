@@ -89,17 +89,19 @@ class Brain:
             system_prompt = custom_prompt.strip()[:2000]
         else:
             system_prompt = self._build_system_prompt(has_files=has_files)
-        user_message = f"Decompose this task into a complete execution plan:\n\n{task}"
+        original_message = f"Decompose this task into a complete execution plan:\n\n{task}"
 
         last_error: Exception | None = None
         for attempt in range(_MAX_PLAN_RETRIES + 1):
             if attempt > 0:
                 logger.warning("brain_retry", attempt=attempt, error=str(last_error))
                 user_message = (
-                    f"{user_message}\n\n"
+                    f"{original_message}\n\n"
                     "IMPORTANT: Your previous response could not be parsed. "
                     "Return ONLY a valid JSON object — no markdown, no explanation, no extra text."
                 )
+            else:
+                user_message = original_message
 
             try:
                 plan = await self._call_llm(system_prompt, user_message)
@@ -247,6 +249,19 @@ class Brain:
             raise ValueError(
                 f"Sub-tasks {sorted(orphaned)} are not included in any execution group. "
                 "Every sub-task must appear in at least one execution group."
+            )
+
+        # Check for duplicate sub-task IDs across execution groups
+        all_group_ids: list[str] = [st_id for group in plan.execution_groups for st_id in group]
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for st_id in all_group_ids:
+            if st_id in seen:
+                duplicates.add(st_id)
+            seen.add(st_id)
+        if duplicates:
+            raise ValueError(
+                f"Sub-task IDs appear in multiple execution groups: {sorted(duplicates)}"
             )
 
         logger.debug(

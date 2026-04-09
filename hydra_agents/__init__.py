@@ -41,6 +41,9 @@ logger = structlog.get_logger(__name__)
 __version__ = "1.0.1"
 __all__ = ["Hydra", "HydraConfig", "EventBus", "EventType", "HydraEvent"]
 
+# Configure logging once at module level rather than on every Hydra() instantiation
+configure_logging()
+
 
 class Hydra:
     """
@@ -56,9 +59,6 @@ class Hydra:
 
     def __init__(self, config: HydraConfig | None = None) -> None:
         self.config = config or HydraConfig()
-
-        # Setup logging
-        configure_logging()
 
         # Initialize tool registry with all built-in tools
         # Pass config so file tools are wired to the correct output_directory

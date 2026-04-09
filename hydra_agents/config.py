@@ -37,6 +37,7 @@ class HydraConfig(BaseSettings):
     # ── Execution ─────────────────────────────────────────────────────────────
     max_concurrent_agents: int = Field(default=5, ge=1, le=50, description="Max number of agents running simultaneously.")
     per_agent_timeout_seconds: int = Field(default=300, gt=0, le=3600, description="Timeout (seconds) per agent execution.")
+    confirmation_timeout_seconds: int = Field(default=120, gt=0, le=3600, description="Timeout (seconds) waiting for user confirmation on tool calls. Aligns with the frontend's 120s default.")
     total_task_timeout_seconds: int = Field(default=1200, gt=0, le=7200, description="Total timeout for the entire task pipeline.")
     total_token_budget: int = Field(default=1_000_000, ge=100_000, le=5_000_000, description="Abort if total token usage exceeds this budget.")
 

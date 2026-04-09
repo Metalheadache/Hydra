@@ -95,8 +95,8 @@ class ToolRegistry:
             ChartGeneratorTool(output_dir=output_dir),
             DataTransformTool(),
             # Code tools
-            RunPythonTool(sandbox_network=sandbox_network),
-            RunShellTool(sandbox_network=sandbox_network),
+            RunPythonTool(sandbox_network=sandbox_network, output_dir=output_dir),
+            RunShellTool(sandbox_network=sandbox_network, output_dir=output_dir),
             # Memory tools
             MemoryStoreTool(),
             MemoryRetrieveTool(),

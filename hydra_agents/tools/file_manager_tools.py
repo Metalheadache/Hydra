@@ -185,7 +185,7 @@ class FileManagerTool(BaseTool):
                         for f in file_list:
                             fp = self._resolve_path(f)
                             if fp.is_file():
-                                zf.write(str(fp), fp.name)
+                                zf.write(str(fp), f)
                     elif p.is_dir():
                         for item in p.rglob("*"):
                             if item.is_file():

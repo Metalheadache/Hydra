@@ -11,32 +11,16 @@ import httpx
 import structlog
 
 from hydra_agents.models import ToolResult
+from hydra_agents.tools._security import is_ssrf_target, is_ssrf_target_sync
 from hydra_agents.tools.base import BaseTool
 
 if TYPE_CHECKING:
     from hydra_agents.config import HydraConfig
 
-import ipaddress
-import re as _re
-
 logger = structlog.get_logger(__name__)
 
 _MAX_FETCH_CHARS = 5000
 _DEFAULT_SEARCH_RESULTS = 5
-
-# SSRF-prevention: private/loopback CIDR blocks
-_BLOCKED_NETWORKS = [
-    ipaddress.ip_network("0.0.0.0/8"),        # "this" network
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS metadata
-    ipaddress.ip_network("::1/128"),          # IPv6 loopback
-    ipaddress.ip_network("fc00::/7"),         # IPv6 ULA
-    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
-]
-_BLOCKED_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
 
 
 class WebSearchTool(BaseTool):
@@ -160,7 +144,7 @@ class WebFetchTool(BaseTool):
 
     async def execute(self, url: str, max_chars: int = _MAX_FETCH_CHARS) -> ToolResult:
         # SSRF prevention (async DNS resolution — non-blocking)
-        if await _is_ssrf_target_async(url):
+        if await is_ssrf_target(url):
             return ToolResult(
                 success=False,
                 error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",
@@ -174,6 +158,12 @@ class WebFetchTool(BaseTool):
             }
             async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
                 resp = await client.get(url, headers=headers)
+                if resp.is_redirect:
+                    location = resp.headers.get("location", "")
+                    return ToolResult(
+                        success=False,
+                        error=f"URL redirected to {location!r}, fetch the redirect target directly",
+                    )
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "")
                 raw_content = resp.text
@@ -216,95 +206,6 @@ class WebFetchTool(BaseTool):
 
 
 # ── HttpRequestTool ───────────────────────────────────────────────────────────
-
-def _is_ssrf_target(url: str) -> bool:
-    """Return True if the URL resolves to a private/loopback address (SSRF prevention).
-
-    Sync version — use _is_ssrf_target_async() from async contexts to avoid
-    blocking the event loop during DNS resolution.
-    """
-    import socket
-    try:
-        parsed = httpx.URL(url)
-        host = parsed.host
-    except Exception:
-        return True  # deny by default on parse failure
-
-    if not host:
-        return True  # deny URLs with no host
-
-    if host.lower() in _BLOCKED_HOSTNAMES:
-        return True
-
-    # Strip IPv6 brackets
-    bare_host = host.strip("[]")
-
-    try:
-        addr = ipaddress.ip_address(bare_host)
-        return any(addr in net for net in _BLOCKED_NETWORKS)
-    except ValueError:
-        pass  # not a literal IP, try DNS resolution
-
-    try:
-        resolved_ips = socket.getaddrinfo(bare_host, None)
-        for family, _, _, _, sockaddr in resolved_ips:
-            ip_str = sockaddr[0]
-            try:
-                addr = ipaddress.ip_address(ip_str)
-                if any(addr in net for net in _BLOCKED_NETWORKS):
-                    return True
-            except ValueError:
-                pass
-    except Exception:
-        pass  # DNS failure — let the request proceed and fail naturally
-
-    return False
-
-
-async def _is_ssrf_target_async(url: str) -> bool:
-    """Async version of _is_ssrf_target — uses loop.getaddrinfo() for non-blocking DNS.
-
-    Use this from async callers (execute() methods) to avoid blocking the event loop.
-    Falls back to the sync version for non-DNS checks (literal IPs, blocked hostnames).
-    """
-    import asyncio
-
-    try:
-        parsed = httpx.URL(url)
-        host = parsed.host
-    except Exception:
-        return True  # deny by default on parse failure
-
-    if not host:
-        return True  # deny URLs with no host
-
-    if host.lower() in _BLOCKED_HOSTNAMES:
-        return True
-
-    # Strip IPv6 brackets
-    bare_host = host.strip("[]")
-
-    try:
-        addr = ipaddress.ip_address(bare_host)
-        return any(addr in net for net in _BLOCKED_NETWORKS)
-    except ValueError:
-        pass  # not a literal IP — proceed to async DNS resolution
-
-    try:
-        loop = asyncio.get_event_loop()
-        resolved_ips = await loop.getaddrinfo(bare_host, None)
-        for family, _, _, _, sockaddr in resolved_ips:
-            ip_str = sockaddr[0]
-            try:
-                addr = ipaddress.ip_address(ip_str)
-                if any(addr in net for net in _BLOCKED_NETWORKS):
-                    return True
-            except ValueError:
-                pass
-    except Exception:
-        pass  # DNS failure — let the request proceed and fail naturally
-
-    return False
 
 
 class HttpRequestTool(BaseTool):
@@ -359,7 +260,7 @@ class HttpRequestTool(BaseTool):
             return ToolResult(success=False, error="URL must start with http:// or https://")
 
         # SSRF prevention (async DNS resolution — non-blocking)
-        if await _is_ssrf_target_async(url):
+        if await is_ssrf_target(url):
             return ToolResult(
                 success=False,
                 error=f"SSRF blocked: requests to private/loopback addresses are not allowed ({url})",
