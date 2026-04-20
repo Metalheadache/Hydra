@@ -18,7 +18,7 @@ Unlike CrewAI or AutoGen where agents are pre-defined, Hydra's Brain **generates
 - 🔄 **Retry + Quality Gate** — Failed agents retry with exponential backoff; LLM quality scoring (1-10) with automatic re-dispatch
 - 🔀 **Provider-Agnostic** — Works with Anthropic, OpenAI, Ollama, Azure, Gemini, DeepSeek, and [100+ providers via litellm](https://docs.litellm.ai/docs/providers)
 - 📎 **File Upload** — Attach PDFs, DOCX, XLSX, PPTX, code files — text auto-extracted for agent context (30+ formats)
-- 🔧 **30+ Built-in Tools** — Document generation, file reading (.doc/.docx/.xlsx/.csv/.pptx/.pdf/code), file management, research, data analysis, code execution, memory, translation, templates, PDF operations, validation
+- 🔧 **35 Built-in Tools** — Document generation, file reading (.doc/.docx/.xlsx/.csv/.pptx/.pdf/code), file management, research, web screenshot, data analysis, code execution, memory, translation, templates, PDF operations, text processing, validation
 - 📎 **Smart File Handling** — Uploaded files auto-extracted for context; agents can re-read originals with reader tools for full structured access (tables, headings, metadata)
 - 🛡️ **Human-in-the-Loop** — Tools with `requires_confirmation` pause for user approval with risk badges, keyboard shortcuts, auto-timeout, and confirmation queue
 - 📋 **Audit Logging** — Every LLM call, tool execution, and state mutation logged as structured JSON Lines
@@ -388,6 +388,12 @@ Token budgeting prevents context overflow. Long outputs are truncated with refer
 | `web_search` | Search the web (Brave/Tavily/SerpAPI) |
 | `web_fetch` | Fetch URL → clean text |
 | `http_request` | Generic HTTP client (GET/POST/PUT/DELETE) with SSRF prevention |
+| `take_screenshot` | Headless Chromium screenshot → PNG; SSRF-protected, file:// confined (optional dep) |
+
+### 🔤 Text Processing
+| Tool | Description |
+|---|---|
+| `regex` | Search, extract, replace, split text using regular expressions; ReDoS-protected with 5s timeout |
 
 ### 🧮 Data & Analysis
 | Tool | Description |
@@ -507,7 +513,7 @@ Hydra extracts text from 30+ file formats for agent context:
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
-# 270+ tests covering core pipeline, security, streaming, events, server, history
+# 333+ tests covering core pipeline, security, streaming, events, server, history
 ```
 
 ---
@@ -551,7 +557,7 @@ hydra.tool_registry.register(MyTool())
 - [x] Export: clipboard + PDF + DOCX
 - [x] Security hardening (WS timeouts, SSRF, path traversal, EventBus fixes, config validation)
 - [x] Human-in-the-loop confirmation modal (queue, risk badges, auto-timeout, timeline)
-- [x] Tool expansion: 22 → 33 tools (readers, file manager, templates, PDF ops)
+- [x] Tool expansion: 22 → 35 tools (readers, file manager, templates, PDF ops, regex, screenshot)
 - [x] Settings: search config, test connection, validation, backend sync
 - [x] Advanced controls: brain strategy presets, custom prompt override, cost toggle
 - [x] Responsive polish (mobile/tablet/desktop)
