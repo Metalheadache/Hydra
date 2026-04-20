@@ -13,7 +13,7 @@ from pathlib import Path
 import structlog
 
 from hydra_agents.models import ToolResult
-from hydra_agents.tools._security import ensure_dir, safe_read_path, safe_write_path
+from hydra_agents.tools._security import safe_read_path
 from hydra_agents.tools.base import BaseTool
 
 logger = structlog.get_logger(__name__)
@@ -22,12 +22,22 @@ _DEFAULT_OUTPUT_DIR = "./hydra_output"
 _MAX_FILE_BYTES = 10 * 1024 * 1024   # 10 MB
 _MAX_INLINE_BYTES = 1 * 1024 * 1024  # 1 MB
 _REDOS_TIMEOUT = 5.0                  # seconds
+_MAX_DIFF_CHARS = 8_000               # cap diff output to avoid overwhelming the LLM
 
 _FLAG_MAP = {
     "ignorecase": re.IGNORECASE,
     "multiline": re.MULTILINE,
     "dotall": re.DOTALL,
 }
+
+# Module-level executor so leaked ReDoS threads are bounded.
+# Python threads cannot be force-killed; on timeout the thread continues running
+# until it completes or the process exits.  max_workers=2 caps the leak to at
+# most two concurrent stuck threads.
+_REGEX_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="hydra_regex",
+)
 
 
 def _build_flags(flags: list[str] | None) -> int:
@@ -39,28 +49,34 @@ def _build_flags(flags: list[str] | None) -> int:
     return result
 
 
-async def _run_with_timeout(fn, *args, timeout: float = _REDOS_TIMEOUT):
-    """Execute fn(*args) in a thread pool; raise concurrent.futures.TimeoutError on timeout.
+def _silence_future_exception(fut: asyncio.Future) -> None:
+    """Drain any exception from an abandoned future to suppress Python's warning.
 
-    Uses asyncio.shield so the underlying thread is not cancelled — it runs to completion
-    or is abandoned when the executor shuts down.  This prevents the event loop from
-    blocking on a ReDoS-stuck thread while still returning to the caller promptly.
+    When _run_with_timeout times out, the shielded inner future continues
+    running but nothing awaits it.  Without this callback Python logs
+    "Future exception was never retrieved" when the thread eventually raises.
+    """
+    if not fut.cancelled():
+        fut.exception()
+
+
+async def _run_with_timeout(fn, *args, timeout: float = _REDOS_TIMEOUT):
+    """Execute fn(*args) in the regex thread pool; raise concurrent.futures.TimeoutError on timeout.
+
+    Uses asyncio.shield so the underlying thread is not cancelled — it runs to
+    completion or is abandoned when the process exits.  max_workers=2 caps the
+    number of leaked threads.  A done callback suppresses log noise from
+    abandoned threads that raise exceptions.
     """
     loop = asyncio.get_running_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    fut = loop.run_in_executor(executor, fn, *args)
+    fut = loop.run_in_executor(_REGEX_EXECUTOR, fn, *args)
+    fut.add_done_callback(_silence_future_exception)
     try:
-        result = await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
-        executor.shutdown(wait=False)
-        return result
+        return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
     except asyncio.TimeoutError:
-        executor.shutdown(wait=False)
         raise concurrent.futures.TimeoutError(
             f"Regex execution timed out after {timeout}s (possible ReDoS pattern)"
         )
-    except Exception:
-        executor.shutdown(wait=False)
-        raise
 
 
 class RegexTool(BaseTool):
@@ -70,7 +86,7 @@ class RegexTool(BaseTool):
     description = (
         "Apply a regular expression to inline text or a file. "
         "Actions: search (find matches with line/column and context), "
-        "extract (return captured groups), "
+        "extract (return captured groups; non-participating optional groups are omitted), "
         "replace (substitute pattern; writes file back when file_path is given), "
         "split (split text on pattern). "
         "ReDoS-protected with a 5-second execution timeout. "
@@ -219,6 +235,8 @@ class RegexTool(BaseTool):
         def _find():
             matches = []
             for m in compiled.finditer(content):
+                if len(matches) >= max_matches:
+                    break
                 before = content[: m.start()]
                 line_num = before.count("\n") + 1
                 col = m.start() - (before.rfind("\n") + 1)
@@ -233,8 +251,6 @@ class RegexTool(BaseTool):
                         "context_after": lines[idx + 1] if idx + 1 < len(lines) else None,
                     }
                 )
-                if len(matches) >= max_matches:
-                    break
             return matches
 
         matches = await _run_with_timeout(_find)
@@ -253,15 +269,27 @@ class RegexTool(BaseTool):
         def _find():
             results = []
             for m in compiled.finditer(content):
+                if len(results) >= max_matches:
+                    break
                 if compiled.groups:
-                    groups: dict = {str(i + 1): g for i, g in enumerate(m.groups())}
+                    # Filter out None: non-participating optional groups (e.g. (a)|(b))
+                    # are omitted rather than returned as null to keep output clean.
+                    groups: dict = {
+                        str(i + 1): g
+                        for i, g in enumerate(m.groups())
+                        if g is not None
+                    }
                     if compiled.groupindex:
-                        groups.update({name: m.group(name) for name in compiled.groupindex})
+                        groups.update(
+                            {
+                                name: m.group(name)
+                                for name in compiled.groupindex
+                                if m.group(name) is not None
+                            }
+                        )
                 else:
                     groups = {"0": m.group(0)}
                 results.append({"match": m.group(0), "groups": groups})
-                if len(results) >= max_matches:
-                    break
             return results
 
         results = await _run_with_timeout(_find)
@@ -298,16 +326,29 @@ class RegexTool(BaseTool):
                     n=2,
                 )
             )
-            source_file.write_text(new_content, encoding="utf-8")
+            diff_text = "".join(diff)
+            if len(diff_text) > _MAX_DIFF_CHARS:
+                diff_text = diff_text[:_MAX_DIFF_CHARS] + "\n... [diff truncated]"
             added = sum(1 for ln in diff if ln.startswith("+") and not ln.startswith("+++"))
             removed = sum(1 for ln in diff if ln.startswith("-") and not ln.startswith("---"))
+
+            # Atomic write: write to .tmp then replace so a crash mid-write does
+            # not leave the original file partially overwritten.
+            tmp = source_file.with_name(source_file.name + ".tmp")
+            try:
+                tmp.write_text(new_content, encoding="utf-8")
+                tmp.replace(source_file)
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
+
             logger.info("regex_replace_file", filepath=str(source_file), added=added, removed=removed)
             return ToolResult(
                 success=True,
                 data={
                     "filepath": str(source_file),
                     "diff_summary": f"+{added} lines, -{removed} lines",
-                    "diff": "".join(diff[:200]),
+                    "diff": diff_text,
                     "bytes_written": len(new_content.encode("utf-8")),
                 },
             )

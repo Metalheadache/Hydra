@@ -255,3 +255,87 @@ async def test_no_input_returns_error():
     tool = RegexTool()
     result = await tool.execute(pattern=r"\d+", action="search")
     assert not result.success
+
+
+# ── empty string input ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_search_empty_string():
+    tool = RegexTool()
+    result = await tool.execute(pattern=r"\d+", action="search", text="")
+    assert result.success
+    assert result.data["count"] == 0
+    assert result.data["matches"] == []
+
+
+@pytest.mark.asyncio
+async def test_extract_empty_string():
+    tool = RegexTool()
+    result = await tool.execute(pattern=r"\d+", action="extract", text="")
+    assert result.success
+    assert result.data["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_replace_empty_string():
+    tool = RegexTool()
+    result = await tool.execute(pattern=r"\d+", action="replace", text="", replacement="X")
+    assert result.success
+    assert result.data["result"] == ""
+
+
+@pytest.mark.asyncio
+async def test_split_empty_string():
+    tool = RegexTool()
+    result = await tool.execute(pattern=r"\s+", action="split", text="")
+    assert result.success
+    assert result.data["parts"] == [""]
+
+
+# ── optional groups filter None ───────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_extract_optional_group_none_filtered():
+    """Non-participating optional groups must be omitted, not returned as None."""
+    tool = RegexTool()
+    # (a)|(b) — for each match exactly one branch fires; the other group is None
+    result = await tool.execute(pattern=r"(a)|(b)", action="extract", text="a b")
+    assert result.success
+    assert result.data["count"] == 2
+    first = result.data["matches"][0]
+    assert first["groups"].get("1") == "a"
+    assert "2" not in first["groups"]   # None filtered out
+    second = result.data["matches"][1]
+    assert second["groups"].get("2") == "b"
+    assert "1" not in second["groups"]  # None filtered out
+
+
+# ── max_matches=0 boundary ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_search_max_matches_zero():
+    """max_matches=0 must return an empty match list marked as truncated."""
+    tool = RegexTool()
+    result = await tool.execute(pattern=r"\d+", action="search", text="abc 123", max_matches=0)
+    assert result.success
+    assert result.data["count"] == 0
+    assert result.data["truncated"] is True
+
+
+# ── atomic file write ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_replace_file_atomic_no_tmp_left(tmp_path):
+    """After a successful replace, no .tmp file should remain."""
+    content = "hello 1\nworld 2\n"
+    target = tmp_path / "data.txt"
+    target.write_text(content, encoding="utf-8")
+
+    tool = RegexTool(output_dir=str(tmp_path))
+    result = await tool.execute(
+        pattern=r"\d", action="replace", file_path=str(target), replacement="N"
+    )
+    assert result.success
+    assert target.read_text(encoding="utf-8") == "hello N\nworld N\n"
+    tmp_file = tmp_path / "data.txt.tmp"
+    assert not tmp_file.exists()   # .tmp cleaned up after atomic replace

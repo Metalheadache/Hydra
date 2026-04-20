@@ -4,6 +4,7 @@ Tests for ScreenshotTool.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -187,6 +188,122 @@ async def test_path_traversal_blocked(tmp_path):
 
     assert not result.success
     assert "traversal" in (result.error or "").lower() or result.error is not None
+
+
+# ── SSRF redirect interceptor ─────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_ssrf_redirect_interceptor_blocks_private_ip(tmp_path):
+    """Route interceptor must abort any request to a private IP (guards SSRF via redirect)."""
+    output_dir = tmp_path / "shots"
+    output_dir.mkdir()
+    tool = ScreenshotTool(output_dir=str(output_dir))
+
+    mock_page = _make_mock_page()
+    captured_handler = None
+
+    async def _capture_route(pattern, handler):
+        nonlocal captured_handler
+        captured_handler = handler
+
+    mock_page.route = AsyncMock(side_effect=_capture_route)
+    mock_pw = _make_mock_pw(mock_page)
+
+    with (
+        patch("hydra_agents.tools.screenshot_tools._PLAYWRIGHT_AVAILABLE", True),
+        patch("hydra_agents.tools.screenshot_tools._async_playwright", return_value=_AsyncCM(mock_pw)),
+    ):
+        result = await tool.execute(url="https://example.com", output_filename="shot.png")
+
+    assert result.success
+    assert captured_handler is not None, "page.route() was never called"
+
+    # Simulate the browser following a redirect to an AWS metadata endpoint (link-local)
+    mock_route = AsyncMock()
+    mock_request = MagicMock()
+    mock_request.url = "http://169.254.169.254/latest/meta-data/"
+    await captured_handler(mock_route, mock_request)
+    mock_route.abort.assert_called_once_with("blockedbyclient")
+
+    # Simulate a request to a 10.x private address
+    mock_route2 = AsyncMock()
+    mock_request2 = MagicMock()
+    mock_request2.url = "http://10.0.0.1/internal"
+    await captured_handler(mock_route2, mock_request2)
+    mock_route2.abort.assert_called_once_with("blockedbyclient")
+
+
+# ── timeout path ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_timeout_returns_error(tmp_path):
+    """asyncio.wait_for timeout must produce a ToolResult error, not an exception."""
+    output_dir = tmp_path / "shots"
+    output_dir.mkdir()
+    tool = ScreenshotTool(output_dir=str(output_dir))
+
+    async def mock_wait_for(coro, timeout):
+        coro.close()   # prevent "coroutine was never awaited" warning
+        raise asyncio.TimeoutError
+
+    with (
+        patch("hydra_agents.tools.screenshot_tools._PLAYWRIGHT_AVAILABLE", True),
+        patch("hydra_agents.tools.screenshot_tools.asyncio.wait_for", mock_wait_for),
+    ):
+        result = await tool.execute(url="https://example.com")
+
+    assert not result.success
+    assert "timed out" in (result.error or "").lower()
+
+
+# ── file:// percent-encoding ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_file_url_percent_encoded_path(tmp_path):
+    """Percent-encoded file:// paths must be decoded before path validation."""
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    # Create a file whose name contains a space (encoded as %20 in URL)
+    html_file = output_dir / "my file.html"
+    html_file.write_text("<html><body>hello</body></html>", encoding="utf-8")
+
+    tool = ScreenshotTool(output_dir=str(output_dir))
+    mock_page = _make_mock_page()
+    mock_pw = _make_mock_pw(mock_page)
+
+    encoded_url = f"file://{output_dir}/my%20file.html"
+
+    with (
+        patch("hydra_agents.tools.screenshot_tools._PLAYWRIGHT_AVAILABLE", True),
+        patch("hydra_agents.tools.screenshot_tools._async_playwright", return_value=_AsyncCM(mock_pw)),
+    ):
+        result = await tool.execute(url=encoded_url, output_filename="encoded_shot.png")
+
+    assert result.success, f"Expected success but got: {result.error}"
+
+
+# ── uuid filename ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_default_filename_uses_uuid(tmp_path):
+    """Auto-generated filenames must use a UUID fragment, not a timestamp."""
+    output_dir = tmp_path / "shots"
+    output_dir.mkdir()
+    tool = ScreenshotTool(output_dir=str(output_dir))
+
+    mock_page = _make_mock_page()
+    mock_pw = _make_mock_pw(mock_page)
+
+    with (
+        patch("hydra_agents.tools.screenshot_tools._PLAYWRIGHT_AVAILABLE", True),
+        patch("hydra_agents.tools.screenshot_tools._async_playwright", return_value=_AsyncCM(mock_pw)),
+    ):
+        result1 = await tool.execute(url="https://example.com")
+        result2 = await tool.execute(url="https://example.com")
+
+    assert result1.success and result2.success
+    # Two calls must produce different filenames
+    assert result1.data["filepath"] != result2.data["filepath"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
