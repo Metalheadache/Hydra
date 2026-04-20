@@ -140,6 +140,23 @@ result = await hydra.run("Write a market analysis")
 
 ---
 
+## Optional Dependencies
+
+Some tools require additional packages not installed by default.
+
+### Screenshot tool (`take_screenshot`)
+
+Captures web pages as PNG images using a headless Chromium browser via Playwright.
+
+```bash
+pip install -r requirements-screenshot.txt
+playwright install chromium
+```
+
+The tool registers automatically when `playwright` is importable; if not installed, it is silently skipped and a warning is logged.
+
+---
+
 ## Web UI
 
 The built-in web interface provides a real-time view of the multi-agent pipeline:

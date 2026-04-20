@@ -71,6 +71,7 @@ class ToolRegistry:
         from hydra_agents.tools.file_manager_tools import FileManagerTool, FileMoveTool, FileDeleteTool
         from hydra_agents.tools.template_tools import TemplateRenderTool
         from hydra_agents.tools.pdf_tools import PdfMergeTool, PdfSplitTool
+        from hydra_agents.tools.regex_tools import RegexTool
 
         output_dir = config.output_directory if config is not None else "./hydra_output"
         sandbox_network = config.sandbox_network if config is not None else False
@@ -121,7 +122,24 @@ class ToolRegistry:
             # PDF operations
             PdfMergeTool(output_dir=output_dir),
             PdfSplitTool(output_dir=output_dir),
+            # Regex (stdlib only — always available)
+            RegexTool(output_dir=output_dir),
         ])
+
+        # Screenshot tool requires optional playwright dependency
+        try:
+            from hydra_agents.tools.screenshot_tools import ScreenshotTool, _PLAYWRIGHT_AVAILABLE
+            if _PLAYWRIGHT_AVAILABLE:
+                self.register(ScreenshotTool(output_dir=output_dir))
+            else:
+                logger.warning(
+                    "screenshot_tool_unavailable",
+                    reason="playwright not installed",
+                    hint="pip install -r requirements-screenshot.txt && playwright install chromium",
+                )
+        except ImportError as exc:
+            logger.warning("screenshot_tool_unavailable", reason=str(exc))
+
         logger.info("default_tools_registered", count=len(self._tools))
 
     # ── Lookup ────────────────────────────────────────────────────────────────
